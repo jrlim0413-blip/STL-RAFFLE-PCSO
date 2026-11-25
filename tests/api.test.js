@@ -85,6 +85,30 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     assert.equal(login.status, 200);
     const headers = { 'x-admin-passcode': adminPasscode };
 
+    const invalidTaskUrl = await fetch(`${baseUrl}/api/tasks`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postUrl: 'https://example.com/not-a-facebook-post' })
+    });
+    assert.equal(invalidTaskUrl.status, 400);
+
+    const taskResponse = await fetch(`${baseUrl}/api/tasks`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postUrl: 'https://www.facebook.com/example/posts/123',
+        instruction: 'Like the post and leave a comment.',
+        suggestedComment: 'Thanks for sharing!'
+      })
+    });
+    assert.equal(taskResponse.status, 201);
+    const taskData = await taskResponse.json();
+    assert.equal(taskData.task.id, 'task_01');
+    assert.equal(taskData.settings.engagementTasks.length, 1);
+    const publicTaskResponse = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}`);
+    assert.equal(publicTaskResponse.status, 200);
+    assert.equal((await publicTaskResponse.json()).task.suggestedComment, 'Thanks for sharing!');
+
     const invalidSchedule = await fetch(`${baseUrl}/api/settings`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -192,6 +216,44 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     });
     assert.equal(duplicateEntry.status, 409);
 
+    const taskVerification = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: 'test-agent-0' })
+    });
+    assert.equal(taskVerification.status, 200);
+
+    const unknownTaskReference = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: 'not-an-entry' })
+    });
+    assert.equal(unknownTaskReference.status, 404);
+
+    const taskProofResponse = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/proof`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'image/png',
+        'x-entry-reference': 'test-agent-0'
+      },
+      body: png
+    });
+    assert.equal(taskProofResponse.status, 201);
+    const proof = await taskProofResponse.json();
+    const taskCompletion = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: 'test-agent-0', proof })
+    });
+    assert.equal(taskCompletion.status, 201);
+
+    const duplicateTaskCompletion = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: 'test-agent-0', proof })
+    });
+    assert.equal(duplicateTaskCompletion.status, 409);
+
     const entriesResponse = await fetch(`${baseUrl}/api/entries`, { headers });
     const entriesResult = await entriesResponse.json();
     const entries = entriesResult.data;
@@ -200,6 +262,10 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const participant = entries.find((entry) => entry.agent === 'Test participant 0');
     assert.equal(participant.agentUsername, 'test-agent-0');
     assert.equal(participant.supervisorName, 'SPVR JED');
+    assert.equal(participant.tasksCompleted, 1);
+    assert.equal(participant.totalTasks, 1);
+    assert.equal(participant.engagementProofs.length, 1);
+    assert.equal(participant.engagementProofs[0].filename, proof.filename);
     const tickets = entries.map((entry) => entry.ticket);
     assert.equal(new Set(tickets).size, entries.length);
     for (const ticket of tickets) assert.match(ticket, /^STL-\d{8}-\d{6}$/);

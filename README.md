@@ -31,9 +31,12 @@ there is no admin link or operations tab on the landing page.
 - Set entry opening and closing times in Philippines time; the landing page shows a live countdown,
   and the API blocks proof uploads and submissions outside the configured window. With no schedule,
   entries remain open as before.
+- Generate Facebook engagement-task links with ticket/username verification, one private screenshot
+  proof per task, and per-entry completion counts in the admin dashboard.
 - Draw a random eligible winner and export entries as CSV.
 - Store full participant details and screenshots in private Supabase Storage buckets; keep only
   ticket, a keyed contact hash, status, and timestamp in the entry table.
+- Store engagement-task completion metadata in the `raffle_task_completions` table.
 - Store campaign settings and compact draw state in Supabase tables when deployed.
 - Keep using local JSON files and proof files during development without Supabase credentials.
 - Draw five distinct 5-kg rice winners first, followed by one distinct 25-kg rice winner.
@@ -68,7 +71,9 @@ service-role key, and removes participant details from draw history. It can be s
 any reported missing records before resuming the raffle.
 
 Set `SUPABASE_ENTRIES_BUCKET` or `SUPABASE_PROOFS_BUCKET` only if you change their names in the SQL
-setup; defaults are `raffle-entries` and `raffle-proofs`. Do not set only one of `SUPABASE_URL` and
+setup; defaults are `raffle-entries` and `raffle-proofs`. For an existing Supabase deployment, run
+the updated schema before deploying this version; it creates the private completion metadata table.
+Do not set only one of `SUPABASE_URL` and
 `SUPABASE_SERVICE_ROLE_KEY`. For local development, leave both unset to use the JSON/file store.
 Contact hashes are keyed with the service-role key; if you rotate that key, rerun the migration
 during maintenance before accepting new entries.
@@ -76,6 +81,10 @@ during maintenance before accepting new entries.
 ## API
 
 - `GET /api/settings` and `POST /api/settings` - Read/update campaign details and the entry schedule.
+- `POST /api/tasks` - Create a Facebook engagement task (organizer only).
+- `GET /api/tasks/:taskId` - Read a task for its shared participant link.
+- `POST /api/tasks/:taskId/verify` - Verify a ticket number or unique agent username.
+- `POST /api/tasks/:taskId/proof` and `/complete` - Upload and record one private task screenshot.
 - `POST /api/admin/session` - Verify the configured organizer passcode.
 - `GET /api/entries` - List entries and summary counts.
 - `POST /api/submit` - Create an entry and ticket.
@@ -85,6 +94,7 @@ during maintenance before accepting new entries.
 - `GET /api/proofs/:filename` - View a screenshot proof.
 - `GET /api/export` - Download an entries CSV.
 
-Except for public settings and entry submission, admin API requests require the
-`x-admin-passcode` header. The admin console is available at `/admin` and requires the configured
-organizer passcode. The public participant page does not display a link to it.
+Organizer-only API requests require the `x-admin-passcode` header. Task links, ticket verification,
+task proof submission, and entry submission are public participant endpoints. The admin console is
+available at `/admin` and requires the configured organizer passcode. The public participant page
+does not display a link to it.

@@ -14,10 +14,11 @@
   <main>
     <h1>Privacy notice</h1>
     <p>This independent STL raffle stores the participant name, contact number, agent username,
-      selected supervisor name, and proof references in private raffle storage. Local development uses a data directory; production
-      stores full entry details and screenshot files in private Supabase Storage buckets. Database
-      tables retain only a ticket code, a protected contact hash, entry status, timestamps, and draw
-      metadata.</p>
+      selected supervisor name, and proof references in private raffle storage. Local development
+      uses a data directory; production stores full entry details and screenshot files, including
+      engagement-task proofs, in private Supabase Storage buckets. Database tables retain only a
+      ticket code, a protected contact hash, entry status, timestamps, draw metadata, and
+      task-completion references.</p>
     <p>The organizer uses this information to administer entries, review proof, contact winners, and
       handle prize claims. The admin dashboard and screenshot files are protected by the organizer
       passcode. The app does not request social media passwords, authentication codes, or account

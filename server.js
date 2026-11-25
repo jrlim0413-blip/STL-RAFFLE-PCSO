@@ -6,11 +6,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   createEntry,
+  createTaskCompletion,
   drawNext,
   getDraw,
   getProof,
   getSettings,
+  getTaskCompletion,
   listEntries,
+  listTaskCompletions,
   proofExists,
   saveSettings,
   toggleEntry,
@@ -56,6 +59,35 @@ app.post(
     res.status(201).json({ success: true, filename });
   })
 );
+app.post(
+  '/api/tasks/:taskId/proof',
+  express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '4mb' }),
+  asyncRoute(async (req, res) => {
+    const task = await findEngagementTask(req.params.taskId);
+    if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+    const resolved = await resolveTaskEntry(req.get('x-entry-reference'));
+    if (resolved.error) {
+      return res.status(resolved.error.status).json({ success: false, error: resolved.error.message });
+    }
+    if (await getTaskCompletion(resolved.entry.ticket, task.id)) {
+      return res.status(409).json({ success: false, error: 'This engagement task has already been submitted for this ticket.' });
+    }
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !ADMIN_PASSCODE) {
+      return res.status(503).json({ success: false, error: 'Engagement proof signing is not configured.' });
+    }
+
+    let decoded;
+    try {
+      decoded = decodeProof(req.body, req.get('content-type'));
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    const filename = await uploadProof(decoded);
+    const expiresAt = Date.now() + TASK_PROOF_TOKEN_TTL_MS;
+    const token = taskProofSignature(resolved.entry.ticket, task.id, filename, expiresAt);
+    res.status(201).json({ success: true, filename, expiresAt, token });
+  })
+);
 app.use(express.json({ limit: '100kb' }));
 
 const DEFAULT_SETTINGS = {
@@ -64,8 +96,11 @@ const DEFAULT_SETTINGS = {
   announcement: 'STL Community Raffle: six rice prizes for six winners.',
   prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.',
   entryStartAt: '',
-  entryEndAt: ''
+  entryEndAt: '',
+  engagementTasks: []
 };
+
+const TASK_PROOF_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 async function getEntryWindowError() {
   const settings = await getSettings(DEFAULT_SETTINGS);
@@ -76,6 +111,71 @@ async function getEntryWindowError() {
     return { status: 503, error: 'The entry schedule is invalid. Please contact the organizer.' };
   }
   return null;
+}
+
+async function findEngagementTask(taskId) {
+  if (!/^task_[a-zA-Z0-9_-]{1,80}$/.test(taskId || '')) return null;
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  const tasks = Array.isArray(settings.engagementTasks) ? settings.engagementTasks : [];
+  return tasks.find((task) => task.id === taskId) || null;
+}
+
+function getFacebookPostUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  try {
+    const url = new URL(value.trim());
+    const hostname = url.hostname.toLowerCase();
+    const isFacebookHost = hostname === 'facebook.com' ||
+      hostname.endsWith('.facebook.com') ||
+      hostname === 'fb.watch';
+    return url.protocol === 'https:' && isFacebookHost && !url.username && !url.password
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTaskEntry(reference) {
+  if (typeof reference !== 'string' || !reference.trim()) {
+    return { error: { status: 400, message: 'Enter your raffle ticket number or agent username.' } };
+  }
+  const normalizedReference = reference.trim().toLowerCase();
+  const entries = await listEntries();
+  const ticketMatch = entries.find((entry) => entry.ticket.toLowerCase() === normalizedReference);
+  if (ticketMatch) return { entry: ticketMatch };
+
+  const usernameMatches = entries.filter(
+    (entry) => entry.agentUsername?.toLowerCase() === normalizedReference
+  );
+  if (usernameMatches.length === 1) return { entry: usernameMatches[0] };
+  if (usernameMatches.length > 1) {
+    return { error: { status: 409, message: 'More than one entry uses this username. Use your unique ticket number instead.' } };
+  }
+  return { error: { status: 404, message: 'No raffle entry matched that ticket number or agent username.' } };
+}
+
+function taskProofSignature(ticket, taskId, filename, expiresAt) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || ADMIN_PASSCODE;
+  if (!secret) throw new Error('Task proof signing is not configured.');
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${ticket}\n${taskId}\n${filename}\n${expiresAt}`)
+    .digest('hex');
+}
+
+function verifyTaskProof(ticket, taskId, proof) {
+  if (!proof || typeof proof.filename !== 'string' ||
+      !/^[a-f0-9]{32}\.(png|jpg|webp)$/.test(proof.filename) ||
+      !Number.isSafeInteger(proof.expiresAt) ||
+      proof.expiresAt <= Date.now() ||
+      proof.expiresAt > Date.now() + TASK_PROOF_TOKEN_TTL_MS ||
+      typeof proof.token !== 'string' || !/^[a-f0-9]{64}$/.test(proof.token)) {
+    return false;
+  }
+  const expected = Buffer.from(taskProofSignature(ticket, taskId, proof.filename, proof.expiresAt), 'hex');
+  const received = Buffer.from(proof.token, 'hex');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 function isAdminPasscodeValid(candidate) {
@@ -173,6 +273,12 @@ app.get('/api/settings', asyncRoute(async (req, res) => {
   res.json({ success: true, settings: await getSettings(DEFAULT_SETTINGS) });
 }));
 
+app.get('/api/tasks/:taskId', asyncRoute(async (req, res) => {
+  const task = await findEngagementTask(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+  res.json({ success: true, task });
+}));
+
 app.post('/api/settings', requireAdmin, asyncRoute(async (req, res) => {
   const body = req.body || {};
   const current = await getSettings(DEFAULT_SETTINGS);
@@ -225,16 +331,129 @@ app.post('/api/settings', requireAdmin, asyncRoute(async (req, res) => {
   res.json({ success: true, settings });
 }));
 
+app.post('/api/tasks', requireAdmin, asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  const postUrl = getFacebookPostUrl(body.postUrl);
+  if (!postUrl) {
+    return res.status(400).json({ success: false, error: 'Enter a valid HTTPS Facebook post URL.' });
+  }
+  for (const field of ['instruction', 'suggestedComment']) {
+    if (body[field] !== undefined && typeof body[field] !== 'string') {
+      return res.status(400).json({ success: false, error: `${field} must be text.` });
+    }
+  }
+  const instruction = (body.instruction || '').trim();
+  const suggestedComment = (body.suggestedComment || '').trim();
+  if (instruction.length > 500 || suggestedComment.length > 500) {
+    return res.status(400).json({ success: false, error: 'Task instructions and suggested comment must be 500 characters or fewer.' });
+  }
+
+  const current = await getSettings(DEFAULT_SETTINGS);
+  const tasks = Array.isArray(current.engagementTasks) ? current.engagementTasks : [];
+  const usedIds = new Set(tasks.map((task) => task.id));
+  const highestId = tasks.reduce((highest, task) => {
+    const match = /^task_(\d+)$/.exec(task?.id || '');
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  let nextId = highestId + 1;
+  let id = `task_${String(nextId).padStart(2, '0')}`;
+  while (usedIds.has(id)) {
+    nextId += 1;
+    id = `task_${String(nextId).padStart(2, '0')}`;
+  }
+  const task = {
+    id,
+    postUrl,
+    instruction,
+    suggestedComment,
+    createdAt: new Date().toISOString()
+  };
+  const settings = { ...current, engagementTasks: [...tasks, task] };
+  await saveSettings(settings);
+  res.status(201).json({ success: true, task, settings });
+}));
+
+app.post('/api/tasks/:taskId/verify', asyncRoute(async (req, res) => {
+  const task = await findEngagementTask(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+  const resolved = await resolveTaskEntry(req.body?.reference);
+  if (resolved.error) {
+    return res.status(resolved.error.status).json({ success: false, error: resolved.error.message });
+  }
+  if (await getTaskCompletion(resolved.entry.ticket, task.id)) {
+    return res.status(409).json({ success: false, error: 'This engagement task has already been submitted for this ticket.' });
+  }
+  res.json({ success: true, message: 'Ticket or agent username verified.' });
+}));
+
+app.post('/api/tasks/:taskId/complete', asyncRoute(async (req, res) => {
+  const task = await findEngagementTask(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+
+  const body = req.body || {};
+  const resolved = await resolveTaskEntry(body.reference);
+  if (resolved.error) {
+    return res.status(resolved.error.status).json({ success: false, error: resolved.error.message });
+  }
+  if (await getTaskCompletion(resolved.entry.ticket, task.id)) {
+    return res.status(409).json({ success: false, error: 'This engagement task has already been submitted for this ticket.' });
+  }
+  if (!verifyTaskProof(resolved.entry.ticket, task.id, body.proof)) {
+    return res.status(400).json({ success: false, error: 'The screenshot proof is invalid or expired. Please upload it again.' });
+  }
+  if (!(await proofExists(body.proof.filename))) {
+    return res.status(400).json({ success: false, error: 'The screenshot proof could not be found. Please upload it again.' });
+  }
+
+  const completion = await createTaskCompletion(
+    resolved.entry.ticket,
+    task.id,
+    body.proof.filename
+  );
+  res.status(201).json({
+    success: true,
+    completedAt: completion.completedAt,
+    message: 'Engagement task proof submitted.'
+  });
+}));
+
 app.get('/api/entries', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const entries = await listEntries();
+  const [entries, completions, settings] = await Promise.all([
+    listEntries(),
+    listTaskCompletions(),
+    getSettings(DEFAULT_SETTINGS)
+  ]);
+  const activeTaskIds = new Set(
+    (Array.isArray(settings.engagementTasks) ? settings.engagementTasks : []).map((task) => task.id)
+  );
+  const totalTasks = activeTaskIds.size;
+  const completionsByTicket = new Map();
+  for (const completion of completions) {
+    if (!activeTaskIds.has(completion.taskId)) continue;
+    const ticketCompletions = completionsByTicket.get(completion.ticket) || [];
+    ticketCompletions.push(completion);
+    completionsByTicket.set(completion.ticket, ticketCompletions);
+  }
+  const entriesWithTaskCounts = entries.map((entry) => {
+    const entryCompletions = completionsByTicket.get(entry.ticket) || [];
+    return {
+      ...entry,
+      tasksCompleted: entryCompletions.length,
+      totalTasks,
+      engagementProofs: entryCompletions.map((completion) => ({
+        filename: completion.proofFilename,
+        pageKey: `${completion.taskId} engagement`
+      }))
+    };
+  });
   const eligible = entries.filter((entry) => entry.status === 'Eligible').length;
   const flagged = entries.length - eligible;
   const activeAgents = new Set(entries.map((entry) => entry.agentUsername).filter(Boolean)).size;
 
   res.json({
     success: true,
-    data: entries,
+    data: entriesWithTaskCounts,
     stats: { total: entries.length, eligible, flagged, activeAgents }
   });
 }));
@@ -365,10 +584,25 @@ app.post('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
 
 app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const entries = await listEntries();
+  const [entries, completions, settings] = await Promise.all([
+    listEntries(),
+    listTaskCompletions(),
+    getSettings(DEFAULT_SETTINGS)
+  ]);
+  const activeTaskIds = new Set(
+    (Array.isArray(settings.engagementTasks) ? settings.engagementTasks : []).map((task) => task.id)
+  );
+  const completionCounts = new Map();
+  for (const completion of completions) {
+    if (!activeTaskIds.has(completion.taskId)) continue;
+    completionCounts.set(
+      completion.ticket,
+      (completionCounts.get(completion.ticket) || 0) + 1
+    );
+  }
   const columns = [
     'Ticket Code', 'Agent Username', 'Supervisor Name', 'Participant Name',
-    'Contact Number', 'Proof Pages', 'Timestamp', 'Status'
+    'Contact Number', 'Proof Pages', 'Tasks Completed', 'Timestamp', 'Status'
   ];
   const rows = entries.map((entry) =>
     [
@@ -378,6 +612,7 @@ app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {
       entry.agent,
       entry.contact,
       (entry.proofs || []).map((proof) => proof.pageKey).join('; '),
+      `${completionCounts.get(entry.ticket) || 0}/${activeTaskIds.size}`,
       entry.time,
       entry.status
     ].map(csvCell).join(',')

@@ -15,6 +15,14 @@ create table if not exists public.raffle_draw_state (
   results jsonb not null default '[]'::jsonb
 );
 
+create table if not exists public.raffle_task_completions (
+  ticket text not null references public.raffle_entries(ticket) on delete cascade,
+  task_id text not null,
+  completed_at timestamptz not null default now(),
+  proof_filename text not null,
+  primary key (ticket, task_id)
+);
+
 insert into public.raffle_draw_state (id, results)
 values (1, '[]'::jsonb)
 on conflict (id) do nothing;
@@ -22,10 +30,12 @@ on conflict (id) do nothing;
 alter table public.raffle_settings enable row level security;
 alter table public.raffle_entries enable row level security;
 alter table public.raffle_draw_state enable row level security;
+alter table public.raffle_task_completions enable row level security;
 
 grant all on public.raffle_settings to service_role;
 grant all on public.raffle_entries to service_role;
 grant all on public.raffle_draw_state to service_role;
+grant all on public.raffle_task_completions to service_role;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

@@ -11,7 +11,8 @@ const DEFAULT_SETTINGS = {
   announcement: 'STL Community Raffle: six rice prizes for six winners.',
   prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.',
   entryStartAt: '',
-  entryEndAt: ''
+  entryEndAt: '',
+  engagementTasks: []
 };
 
 export default function App() {
@@ -129,6 +130,7 @@ export default function App() {
               pageSettings={pageSettings}
               adminPasscode={adminPasscode}
               onUpdateSettings={handleUpdateSettings}
+              onSettingsChange={(updated) => setPageSettings({ ...DEFAULT_SETTINGS, ...updated })}
               onRefresh={() => fetchEntries(adminPasscode)}
             />
           ) : (

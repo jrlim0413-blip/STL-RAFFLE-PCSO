@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, ShieldCheck,
 import { readApiResponse } from '../utils/apiResponse';
 import { formatManilaDateTime, getCountdownParts, getEntrySchedule } from '../utils/entrySchedule';
 import { SUPERVISOR_NAMES } from '../utils/supervisors';
+import EngagementTaskModal from './EngagementTaskModal';
 
 const PROOF_PAGES = [
   {
@@ -38,6 +39,7 @@ export default function LandingPage({ pageSettings }) {
   const [copied, setCopied] = useState(false);
   const [consent, setConsent] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [taskId, setTaskId] = useState(() => new URLSearchParams(window.location.search).get('task'));
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -46,6 +48,18 @@ export default function LandingPage({ pageSettings }) {
 
   const entrySchedule = getEntrySchedule(pageSettings.entryStartAt, pageSettings.entryEndAt, now);
   const countdown = entrySchedule.target ? getCountdownParts(entrySchedule.target, now) : null;
+
+  const closeEngagementTask = () => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete('task');
+    const search = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+    );
+    setTaskId(null);
+  };
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -547,6 +561,7 @@ export default function LandingPage({ pageSettings }) {
         </div>
       </section>
 
+      {taskId && <EngagementTaskModal taskId={taskId} onClose={closeEngagementTask} />}
     </div>
   );
 }

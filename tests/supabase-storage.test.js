@@ -37,7 +37,9 @@ function sendJson(response, status, data) {
 test('Supabase entries store full participant details in a private bucket', { timeout: 30000 }, async () => {
   const objects = new Map();
   const entries = new Map();
+  const taskCompletions = new Map();
   let drawResults = [];
+  let settingsRow = null;
   const storageServer = http.createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/storage/v1/object/list/raffle-proofs') {
@@ -80,7 +82,34 @@ test('Supabase entries store full participant details in a private bucket', { ti
       return sendJson(response, 200, rows);
     }
     if (url.pathname === '/rest/v1/raffle_settings' && request.method === 'GET') {
-      return sendJson(response, 200, []);
+      return sendJson(response, 200, settingsRow ? [settingsRow] : []);
+    }
+    if (url.pathname === '/rest/v1/raffle_settings' && request.method === 'POST') {
+      const body = JSON.parse((await readBody(request)).toString('utf8'));
+      settingsRow = body;
+      response.writeHead(201);
+      return response.end();
+    }
+    if (url.pathname === '/rest/v1/raffle_task_completions' && request.method === 'GET') {
+      const ticket = url.searchParams.get('ticket')?.replace(/^eq\./, '');
+      const taskId = url.searchParams.get('task_id')?.replace(/^eq\./, '');
+      const rows = [...taskCompletions.values()].filter((row) =>
+        (!ticket || row.ticket === ticket) && (!taskId || row.task_id === taskId)
+      );
+      return sendJson(response, 200, rows);
+    }
+    if (url.pathname === '/rest/v1/raffle_task_completions' && request.method === 'POST') {
+      const body = JSON.parse((await readBody(request)).toString('utf8'));
+      const rows = Array.isArray(body) ? body : [body];
+      const created = rows.map((row) => ({
+        ...row,
+        completed_at: new Date().toISOString()
+      }));
+      if (created.some((row) => taskCompletions.has(`${row.ticket}:${row.task_id}`))) {
+        return sendJson(response, 409, { code: '23505', message: 'duplicate task completion' });
+      }
+      for (const row of created) taskCompletions.set(`${row.ticket}:${row.task_id}`, row);
+      return sendJson(response, 201, created.length === 1 ? created[0] : created);
     }
     if (url.pathname === '/rest/v1/raffle_entries' && request.method === 'POST') {
       const body = JSON.parse((await readBody(request)).toString('utf8'));
@@ -188,6 +217,35 @@ test('Supabase entries store full participant details in a private bucket', { ti
     assert.equal(storedEntry.supervisorName, 'SPVR CARL');
     assert.equal(storedEntry.proofs.length, 3);
 
+    const taskResponse = await fetch(`${baseUrl}/api/tasks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-passcode': adminPasscode
+      },
+      body: JSON.stringify({ postUrl: 'https://www.facebook.com/example/posts/456' })
+    });
+    assert.equal(taskResponse.status, 201);
+    const task = (await taskResponse.json()).task;
+
+    const engagementProofResponse = await fetch(`${baseUrl}/api/tasks/${task.id}/proof`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'image/png',
+        'x-entry-reference': 'bucket-test-agent'
+      },
+      body: png
+    });
+    assert.equal(engagementProofResponse.status, 201);
+    const engagementProof = await engagementProofResponse.json();
+    const completionResponse = await fetch(`${baseUrl}/api/tasks/${task.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: 'bucket-test-agent', proof: engagementProof })
+    });
+    assert.equal(completionResponse.status, 201);
+    assert.equal(taskCompletions.size, 1);
+
     const anotherSubmit = await fetch(`${baseUrl}/api/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -223,6 +281,9 @@ test('Supabase entries store full participant details in a private bucket', { ti
     const storedEntries = (await entriesResponse.json()).data;
     assert.equal(storedEntries.length, 2);
     assert.ok(storedEntries.some((entry) => entry.agent === 'Bucket Test Participant' && entry.contact === '55501099'));
+    const storedParticipant = storedEntries.find((entry) => entry.agent === 'Bucket Test Participant');
+    assert.equal(storedParticipant.tasksCompleted, 1);
+    assert.equal(storedParticipant.totalTasks, 1);
 
     drawResults = [{
       round: 1,
