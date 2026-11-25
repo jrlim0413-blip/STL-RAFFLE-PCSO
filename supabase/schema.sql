@@ -40,6 +40,19 @@ set public = false,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'raffle-entries',
+  'raffle-entries',
+  false,
+  1048576,
+  array['application/json']
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 create or replace function public.toggle_raffle_entry_status(p_ticket text)
 returns jsonb
 language plpgsql

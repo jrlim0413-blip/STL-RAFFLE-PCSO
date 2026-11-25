@@ -84,6 +84,20 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+function generateTicketCode() {
+  const dateParts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date()).map(({ type, value }) => [type, value])
+  );
+  const numericDate = `${dateParts.year}${dateParts.month}${dateParts.day}`;
+  const uniqueNumber = crypto.randomInt(100000, 1000000);
+  return `STL-${numericDate}-${uniqueNumber}`;
+}
+
 function decodeProof(image, mimeType) {
   if (!Buffer.isBuffer(image) || !IMAGE_TYPES[mimeType]) {
     throw new Error('Each proof must be a PNG, JPEG, or WebP screenshot.');
@@ -240,7 +254,7 @@ app.post('/api/submit', asyncRoute(async (req, res) => {
 
   let ticket;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = `STL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const candidate = generateTicketCode();
     try {
       const entry = {
         ticket: candidate,

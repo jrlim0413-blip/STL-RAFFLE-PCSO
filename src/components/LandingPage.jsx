@@ -289,7 +289,7 @@ export default function LandingPage({ pageSettings }) {
             <div className="mt-8 flex items-start gap-3 rounded-2xl border border-blue-100 bg-white p-4 text-sm leading-6 text-slate-600">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
               <p>
-                Your screenshots are stored privately for organizer review. Never upload passwords,
+                Your entry details and screenshots are stored privately for organizer review. Never upload passwords,
                 one-time codes, or private messages.
               </p>
             </div>
@@ -318,13 +318,37 @@ export default function LandingPage({ pageSettings }) {
                     three page screenshots for your claim.
                   </p>
                 </div>
-                <div className="mx-auto max-w-md rounded-2xl border border-blue-200 bg-blue-50/70 p-6">
-                  <div className="flex items-center justify-center gap-2 text-xs font-extrabold uppercase tracking-wide text-blue-900">
-                    <Ticket className="h-4 w-4" /> STL raffle ticket
+                <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-blue-200 bg-white text-left shadow-md">
+                  <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-blue-950 via-blue-800 to-blue-700 px-5 py-4 text-white">
+                    <div className="flex items-center gap-3">
+                      <img src="/images/stl-logo.png" alt="STL" className="h-11 w-11 rounded-lg bg-white p-1 object-contain" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-100">STL Community Raffle</p>
+                        <p className="mt-1 text-sm font-black uppercase tracking-wide">Entry ticket</p>
+                      </div>
+                    </div>
+                    <Ticket className="h-6 w-6 shrink-0 text-amber-300" />
                   </div>
-                  <p className="mt-3 font-mono text-3xl font-black text-blue-800 sm:text-4xl">{generatedTicket.ticket}</p>
-                  <p className="mt-3 text-sm font-bold text-slate-800">{generatedTicket.agent}</p>
-                  <p className="mt-1 text-xs text-slate-600">Keep this ticket screenshot as proof when claiming a prize.</p>
+                  <div className="p-5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-blue-700">Unique ticket code</p>
+                    <p className="mt-2 break-all font-mono text-2xl font-black tracking-wide text-slate-950 sm:text-3xl">
+                      {generatedTicket.ticket}
+                    </p>
+                    <div className="my-4 border-t-2 border-dashed border-slate-200" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Participant</p>
+                        <p className="mt-1 break-words text-sm font-bold text-slate-900">{generatedTicket.agent}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Issue date</p>
+                        <p className="mt-1 font-mono text-sm font-bold text-slate-900">{generatedTicket.ticket.split('-')[1]}</p>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-xs leading-5 text-slate-600">
+                      Save this ticket screenshot as proof when claiming a prize.
+                    </p>
+                  </div>
                 </div>
                 <button type="button" onClick={copyTicket} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900">
                   <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy ticket number'}

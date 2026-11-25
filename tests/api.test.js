@@ -128,6 +128,9 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const entriesResponse = await fetch(`${baseUrl}/api/entries`, { headers });
     const entries = (await entriesResponse.json()).data;
     assert.equal(entries.length, 6);
+    const tickets = entries.map((entry) => entry.ticket);
+    assert.equal(new Set(tickets).size, entries.length);
+    for (const ticket of tickets) assert.match(ticket, /^STL-\d{8}-\d{6}$/);
 
     const proofResponse = await fetch(`${baseUrl}/api/proofs/${uploads[0].filename}`, { headers });
     assert.equal(proofResponse.status, 200);

@@ -23,26 +23,31 @@ there is no admin link or operations tab on the landing page.
 
 ## Features
 
-- Submit raffle entries and generate unique ticket codes.
+- Submit raffle entries and generate unique numeric-date ticket codes (`STL-YYYYMMDD-######`).
 - Require one screenshot proof for each of the three campaign pages before generating a ticket.
 - Store proof images outside the public web directory and protect admin/proof APIs with the organizer passcode.
 - Review entries and mark them eligible or for review.
 - Configure campaign details and an optional authorized campaign link.
 - Draw a random eligible winner and export entries as CSV.
-- Store campaign settings, entries, draw state, and private proofs in Supabase when deployed.
+- Store full participant details and screenshots in private Supabase Storage buckets; keep only
+  ticket, a keyed contact hash, status, and timestamp in the entry table.
+- Store campaign settings and compact draw state in Supabase tables when deployed.
 - Keep using local JSON files and proof files during development without Supabase credentials.
 - Draw five distinct 5-kg rice winners first, followed by one distinct 25-kg rice winner.
 
 The entry form asks for participant name, contact number, and three screenshots. Never upload
-passwords, authentication codes, or private messages. Screenshot proofs are uploaded individually and are stored in the private `raffle-proofs` Supabase
-bucket in production, or `data/proofs/` locally. The private Supabase service-role key is used only
-by the server and must never be added to client-side variables.
+passwords, authentication codes, or private messages. In production, full participant records are
+stored as private JSON objects in the `raffle-entries` bucket, and screenshot proofs are stored in
+the private `raffle-proofs` bucket. Database rows keep only raffle indexes and draw metadata. Locally,
+records and proofs use files under `data/`. The private Supabase service-role key is used only by the
+server and must never be added to client-side variables. Storage buckets have their own quota and
+are not unlimited.
 
 ## Deploy to Vercel with Supabase
 
 1. Create a Supabase project and open its SQL Editor.
-2. Run [`supabase/schema.sql`](./supabase/schema.sql) to create the tables, private proof bucket,
-   and atomic raffle draw functions.
+2. Run [`supabase/schema.sql`](./supabase/schema.sql) to create the tables, private entry/proof
+   buckets, and atomic raffle draw functions.
 3. In the Vercel project settings, add these environment variables for Production (and Preview if
    needed):
    - `SUPABASE_URL` - the Supabase project URL.
@@ -51,9 +56,18 @@ by the server and must never be added to client-side variables.
 4. Redeploy the project. The Vercel function in `api/` serves the Express API, while Vite serves
    the public site. No Supabase credentials are needed in browser-visible variables.
 
-Set `SUPABASE_PROOFS_BUCKET` only if you change the bucket name in the SQL setup; the default is
-`raffle-proofs`. Do not set only one of `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-For local development, leave both unset to use the JSON/file store.
+For an existing project, back up the database, run the updated schema, deploy the new code, and
+pause submissions and draws while migrating existing records. With the Supabase URL and service-role
+key in a local `.env`, run `npm run migrate:entries`. The command uploads and verifies each full
+entry before replacing its database JSON with compact metadata, hashes contact numbers using the
+service-role key, and removes participant details from draw history. It can be safely rerun; resolve
+any reported missing records before resuming the raffle.
+
+Set `SUPABASE_ENTRIES_BUCKET` or `SUPABASE_PROOFS_BUCKET` only if you change their names in the SQL
+setup; defaults are `raffle-entries` and `raffle-proofs`. Do not set only one of `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`. For local development, leave both unset to use the JSON/file store.
+Contact hashes are keyed with the service-role key; if you rotate that key, rerun the migration
+during maintenance before accepting new entries.
 
 ## API
 
