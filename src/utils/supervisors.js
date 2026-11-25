@@ -1,0 +1,13 @@
+export const SUPERVISOR_NAMES = [
+  'SPVR- RAFFY',
+  'SPVR MOLLY',
+  'SPVR HARRY',
+  'SPVR MICHAEL',
+  'SPVR CARL',
+  'SPVR NYOR',
+  'SPVR ROEL',
+  'SPVR ARLFRED',
+  'SVPR JASON',
+  'SPVR JED',
+  'SPVR JOEL'
+];

@@ -16,6 +16,8 @@ import {
   toggleEntry,
   uploadProof
 } from './lib/raffleStore.js';
+import { getEntrySchedule } from './src/utils/entrySchedule.js';
+import { SUPERVISOR_NAMES } from './src/utils/supervisors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +41,10 @@ app.post(
   '/api/proofs/upload',
   express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '4mb' }),
   asyncRoute(async (req, res) => {
+    const windowError = await getEntryWindowError();
+    if (windowError) {
+      return res.status(windowError.status).json({ success: false, error: windowError.error });
+    }
     const mimeType = req.get('content-type');
     let decoded;
     try {
@@ -56,8 +62,21 @@ const DEFAULT_SETTINGS = {
   campaignName: 'STL Raffle',
   campaignUrl: '',
   announcement: 'STL Community Raffle: six rice prizes for six winners.',
-  prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.'
+  prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.',
+  entryStartAt: '',
+  entryEndAt: ''
 };
+
+async function getEntryWindowError() {
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  const { state } = getEntrySchedule(settings.entryStartAt, settings.entryEndAt);
+  if (state === 'upcoming') return { status: 409, error: 'Entries are not open yet.' };
+  if (state === 'ended') return { status: 409, error: 'The raffle entry period is closed.' };
+  if (state === 'invalid') {
+    return { status: 503, error: 'The entry schedule is invalid. Please contact the organizer.' };
+  }
+  return null;
+}
 
 function isAdminPasscodeValid(candidate) {
   if (typeof candidate !== 'string' || ADMIN_PASSCODE.length < 12) return false;
@@ -166,6 +185,23 @@ app.post('/api/settings', requireAdmin, asyncRoute(async (req, res) => {
       updates[field] = body[field].trim();
     }
   }
+  for (const field of ['entryStartAt', 'entryEndAt']) {
+    if (body[field] !== undefined) {
+      if (typeof body[field] !== 'string') {
+        return res.status(400).json({ success: false, error: `${field} must be a date or empty.` });
+      }
+      const value = body[field].trim();
+      if (value) {
+        const timestamp = Date.parse(value);
+        if (!Number.isFinite(timestamp)) {
+          return res.status(400).json({ success: false, error: `${field} must be a valid date.` });
+        }
+        updates[field] = new Date(timestamp).toISOString();
+      } else {
+        updates[field] = '';
+      }
+    }
+  }
   if (!updates.campaignName && body.campaignName !== undefined) {
     return res.status(400).json({ success: false, error: 'Campaign name is required.' });
   }
@@ -179,6 +215,12 @@ app.post('/api/settings', requireAdmin, asyncRoute(async (req, res) => {
   }
 
   const settings = { ...current, ...updates };
+  if (getEntrySchedule(settings.entryStartAt, settings.entryEndAt).state === 'invalid') {
+    return res.status(400).json({
+      success: false,
+      error: 'Set both entry dates and make sure the closing time is after the opening time.'
+    });
+  }
   await saveSettings(settings);
   res.json({ success: true, settings });
 }));
@@ -188,12 +230,12 @@ app.get('/api/entries', requireAdmin, asyncRoute(async (req, res) => {
   const entries = await listEntries();
   const eligible = entries.filter((entry) => entry.status === 'Eligible').length;
   const flagged = entries.length - eligible;
-  const activeKiosks = new Set(entries.map((entry) => entry.kiosk).filter(Boolean)).size;
+  const activeAgents = new Set(entries.map((entry) => entry.agentUsername).filter(Boolean)).size;
 
   res.json({
     success: true,
     data: entries,
-    stats: { total: entries.length, eligible, flagged, activeKiosks }
+    stats: { total: entries.length, eligible, flagged, activeAgents }
   });
 }));
 
@@ -210,22 +252,34 @@ app.get('/api/proofs/:filename', requireAdmin, asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/submit', asyncRoute(async (req, res) => {
+  const initialWindowError = await getEntryWindowError();
+  if (initialWindowError) {
+    return res.status(initialWindowError.status).json({ success: false, error: initialWindowError.error });
+  }
+
   const body = req.body || {};
-  for (const field of ['agent', 'contact', 'kiosk']) {
+  for (const field of ['agent', 'contact', 'agentUsername', 'supervisorName']) {
     if (body[field] !== undefined && typeof body[field] !== 'string') {
       return res.status(400).json({ success: false, error: `${field} must be text.` });
     }
   }
   const agent = (body.agent || '').trim();
   const contact = (body.contact || '').trim();
-  const kiosk = (body.kiosk || '').trim();
-  if (!agent || !contact) {
-    return res.status(400).json({ success: false, error: 'Name and contact number are required.' });
+  const agentUsername = (body.agentUsername || '').trim();
+  const supervisorName = (body.supervisorName || '').trim();
+  if (!agent || !contact || !agentUsername || !supervisorName) {
+    return res.status(400).json({
+      success: false,
+      error: 'Name, contact number, agent username, and supervisor name are required.'
+    });
+  }
+  if (!SUPERVISOR_NAMES.includes(supervisorName)) {
+    return res.status(400).json({ success: false, error: 'Select a valid supervisor name.' });
   }
   if (body.consent !== true) {
     return res.status(400).json({ success: false, error: 'Consent is required to store raffle entry details and screenshot proofs.' });
   }
-  if (agent.length > 100 || contact.length > 40 || kiosk.length > 100) {
+  if (agent.length > 100 || contact.length > 40 || agentUsername.length > 100 || supervisorName.length > 100) {
     return res.status(400).json({ success: false, error: 'One or more fields exceed the allowed length.' });
   }
 
@@ -254,11 +308,16 @@ app.post('/api/submit', asyncRoute(async (req, res) => {
 
   let ticket;
   for (let attempt = 0; attempt < 20; attempt += 1) {
+    const currentWindowError = await getEntryWindowError();
+    if (currentWindowError) {
+      return res.status(currentWindowError.status).json({ success: false, error: currentWindowError.error });
+    }
     const candidate = generateTicketCode();
     try {
       const entry = {
         ticket: candidate,
-        kiosk,
+        agentUsername,
+        supervisorName,
         agent,
         contact,
         proofs: body.proofScreenshots.map(({ pageKey, filename }) => ({
@@ -307,11 +366,15 @@ app.post('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
 app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const entries = await listEntries();
-  const columns = ['Ticket Code', 'Branch or Outlet', 'Name', 'Contact Number', 'Proof Pages', 'Timestamp', 'Status'];
+  const columns = [
+    'Ticket Code', 'Agent Username', 'Supervisor Name', 'Participant Name',
+    'Contact Number', 'Proof Pages', 'Timestamp', 'Status'
+  ];
   const rows = entries.map((entry) =>
     [
       entry.ticket,
-      entry.kiosk,
+      entry.agentUsername,
+      entry.supervisorName,
       entry.agent,
       entry.contact,
       (entry.proofs || []).map((proof) => proof.pageKey).join('; '),

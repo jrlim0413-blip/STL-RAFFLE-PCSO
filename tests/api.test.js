@@ -73,7 +73,80 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const settingsResponse = await fetch(`${baseUrl}/api/settings`);
     const settings = await settingsResponse.json();
     assert.equal(settings.settings.campaignName, 'STL Raffle');
+    assert.equal(settings.settings.entryStartAt, '');
+    assert.equal(settings.settings.entryEndAt, '');
     assert.equal(settingsResponse.status, 200);
+
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: adminPasscode })
+    });
+    assert.equal(login.status, 200);
+    const headers = { 'x-admin-passcode': adminPasscode };
+
+    const invalidSchedule = await fetch(`${baseUrl}/api/settings`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryStartAt: new Date(Date.now() + 3600000).toISOString() })
+    });
+    assert.equal(invalidSchedule.status, 400);
+
+    const futureStart = new Date(Date.now() + 3600000).toISOString();
+    const futureEnd = new Date(Date.now() + 7200000).toISOString();
+    const scheduleResponse = await fetch(`${baseUrl}/api/settings`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryStartAt: futureStart, entryEndAt: futureEnd })
+    });
+    assert.equal(scheduleResponse.status, 200);
+
+    const earlyEntry = await fetch(`${baseUrl}/api/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(earlyEntry.status, 409);
+    assert.match((await earlyEntry.json()).error, /not open yet/i);
+
+    const earlyProofUpload = await fetch(`${baseUrl}/api/proofs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: png
+    });
+    assert.equal(earlyProofUpload.status, 409);
+
+    const activeSchedule = await fetch(`${baseUrl}/api/settings`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entryStartAt: new Date(Date.now() - 60000).toISOString(),
+        entryEndAt: new Date(Date.now() + 3600000).toISOString()
+      })
+    });
+    assert.equal(activeSchedule.status, 200);
+
+    const missingRequiredFields = await fetch(`${baseUrl}/api/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'Required field test', contact: '55501099', consent: true })
+    });
+    assert.equal(missingRequiredFields.status, 400);
+    assert.match((await missingRequiredFields.json()).error, /agent username.*supervisor name/i);
+
+    const invalidSupervisor = await fetch(`${baseUrl}/api/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'Invalid supervisor test',
+        contact: '55501098',
+        agentUsername: 'invalid-supervisor-test',
+        supervisorName: 'Not on the list',
+        consent: true
+      })
+    });
+    assert.equal(invalidSupervisor.status, 400);
+    assert.match((await invalidSupervisor.json()).error, /valid supervisor/i);
 
     const uploads = [];
     for (const pageKey of proofPages) {
@@ -96,7 +169,8 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
         body: JSON.stringify({
           agent: `Test participant ${index}`,
           contact: `555010${index}`,
-          kiosk: 'API test',
+          agentUsername: `test-agent-${index}`,
+          supervisorName: 'SPVR JED',
           consent: true,
           proofScreenshots: uploads
         })
@@ -110,24 +184,22 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       body: JSON.stringify({
         agent: 'Duplicate participant',
         contact: '5550100',
-        kiosk: 'API test',
+        agentUsername: 'duplicate-agent',
+        supervisorName: 'SPVR JED',
         consent: true,
         proofScreenshots: uploads
       })
     });
     assert.equal(duplicateEntry.status, 409);
 
-    const login = await fetch(`${baseUrl}/api/admin/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passcode: adminPasscode })
-    });
-    assert.equal(login.status, 200);
-
-    const headers = { 'x-admin-passcode': adminPasscode };
     const entriesResponse = await fetch(`${baseUrl}/api/entries`, { headers });
-    const entries = (await entriesResponse.json()).data;
+    const entriesResult = await entriesResponse.json();
+    const entries = entriesResult.data;
     assert.equal(entries.length, 6);
+    assert.equal(entriesResult.stats.activeAgents, 6);
+    const participant = entries.find((entry) => entry.agent === 'Test participant 0');
+    assert.equal(participant.agentUsername, 'test-agent-0');
+    assert.equal(participant.supervisorName, 'SPVR JED');
     const tickets = entries.map((entry) => entry.ticket);
     assert.equal(new Set(tickets).size, entries.length);
     for (const ticket of tickets) assert.match(ticket, /^STL-\d{8}-\d{6}$/);
@@ -158,6 +230,30 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       '5 kg rice', '5 kg rice', '5 kg rice',
       '5 kg rice', '5 kg rice', '25 kg rice'
     ]);
+
+    const csvResponse = await fetch(`${baseUrl}/api/export`, { headers });
+    assert.equal(csvResponse.status, 200);
+    const csv = await csvResponse.text();
+    assert.match(csv, /"Agent Username","Supervisor Name","Participant Name"/);
+    assert.match(csv, /"test-agent-0","SPVR JED","Test participant 0"/);
+
+    const closedSchedule = await fetch(`${baseUrl}/api/settings`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entryStartAt: new Date(Date.now() - 7200000).toISOString(),
+        entryEndAt: new Date(Date.now() - 1000).toISOString()
+      })
+    });
+    assert.equal(closedSchedule.status, 200);
+
+    const lateEntry = await fetch(`${baseUrl}/api/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(lateEntry.status, 409);
+    assert.match((await lateEntry.json()).error, /period is closed/i);
   } finally {
     if (server.exitCode === null) server.kill();
     await serverClosed;

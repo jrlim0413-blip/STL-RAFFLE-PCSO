@@ -165,7 +165,8 @@ test('Supabase entries store full participant details in a private bucket', { ti
       body: JSON.stringify({
         agent: 'Bucket Test Participant',
         contact: '55501099',
-        kiosk: 'Storage test',
+        agentUsername: 'bucket-test-agent',
+        supervisorName: 'SPVR CARL',
         consent: true,
         proofScreenshots: proofs
       })
@@ -183,6 +184,8 @@ test('Supabase entries store full participant details in a private bucket', { ti
     const storedEntry = JSON.parse(objects.get(objectKey).toString('utf8'));
     assert.equal(storedEntry.agent, 'Bucket Test Participant');
     assert.equal(storedEntry.contact, '55501099');
+    assert.equal(storedEntry.agentUsername, 'bucket-test-agent');
+    assert.equal(storedEntry.supervisorName, 'SPVR CARL');
     assert.equal(storedEntry.proofs.length, 3);
 
     const anotherSubmit = await fetch(`${baseUrl}/api/submit`, {
@@ -191,6 +194,8 @@ test('Supabase entries store full participant details in a private bucket', { ti
       body: JSON.stringify({
         agent: 'Another Bucket Participant',
         contact: '55501100',
+        agentUsername: 'another-bucket-agent',
+        supervisorName: 'SPVR MOLLY',
         consent: true,
         proofScreenshots: proofs
       })
@@ -203,6 +208,8 @@ test('Supabase entries store full participant details in a private bucket', { ti
       body: JSON.stringify({
         agent: 'Duplicate Bucket Participant',
         contact: '555-010-99',
+        agentUsername: 'duplicate-bucket-agent',
+        supervisorName: 'SPVR NYOR',
         consent: true,
         proofScreenshots: proofs
       })

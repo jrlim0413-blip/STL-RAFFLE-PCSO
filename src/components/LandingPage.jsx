@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, Copy, ExternalLink, Gift, ShieldCheck, Ticket, Upload, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, ShieldCheck, Ticket, Upload, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
+import { formatManilaDateTime, getCountdownParts, getEntrySchedule } from '../utils/entrySchedule';
+import { SUPERVISOR_NAMES } from '../utils/supervisors';
 
 const PROOF_PAGES = [
   {
@@ -23,7 +25,7 @@ const PROOF_PAGES = [
   }
 ];
 
-const EMPTY_FORM = { agent: '', contact: '', kiosk: '' };
+const EMPTY_FORM = { agent: '', contact: '', agentUsername: '', supervisorName: '' };
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -35,6 +37,15 @@ export default function LandingPage({ pageSettings }) {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const entrySchedule = getEntrySchedule(pageSettings.entryStartAt, pageSettings.entryEndAt, now);
+  const countdown = entrySchedule.target ? getCountdownParts(entrySchedule.target, now) : null;
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -206,6 +217,47 @@ export default function LandingPage({ pageSettings }) {
               </p>
             </aside>
           </div>
+
+          <div className="mt-8 rounded-3xl border border-blue-100 bg-blue-50/60 p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-700">Entry schedule</p>
+                <h2 className="mt-1 text-lg font-black text-slate-950 sm:text-xl">
+                  {entrySchedule.state === 'upcoming' && 'Entries open in'}
+                  {entrySchedule.state === 'open' && 'Entry period closes in'}
+                  {entrySchedule.state === 'ended' && 'Entry period has ended'}
+                  {entrySchedule.state === 'unscheduled' && 'Entries are open'}
+                  {entrySchedule.state === 'invalid' && 'Entry schedule unavailable'}
+                </h2>
+              </div>
+              <Clock className="mt-1 h-5 w-5 shrink-0 text-blue-700" />
+            </div>
+            {countdown ? (
+              <div aria-live="off" className="mt-4 grid max-w-xl grid-cols-4 gap-2 sm:gap-3">
+                {Object.entries(countdown).map(([unit, value]) => (
+                  <div key={unit} className="rounded-xl border border-blue-100 bg-white px-2 py-3 text-center sm:px-4">
+                    <p className="font-mono text-2xl font-black tabular-nums text-slate-950 sm:text-3xl">
+                      {String(value).padStart(2, '0')}
+                    </p>
+                    <p className="mt-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-500 sm:text-xs">
+                      {unit}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {entrySchedule.state === 'ended' && 'The entry form is closed. Thank you for your interest.'}
+                {entrySchedule.state === 'unscheduled' && 'The entry form is available while no opening or closing time is set.'}
+                {entrySchedule.state === 'invalid' && 'The organizer needs to set a valid opening and closing time before entries can be accepted.'}
+              </p>
+            )}
+            {pageSettings.entryStartAt && pageSettings.entryEndAt && (
+              <p className="mt-4 border-t border-blue-100 pt-3 text-xs font-medium text-slate-600">
+                Opens {formatManilaDateTime(pageSettings.entryStartAt)} · Closes {formatManilaDateTime(pageSettings.entryEndAt)} (Philippines time)
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
@@ -363,7 +415,7 @@ export default function LandingPage({ pageSettings }) {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : entrySchedule.isOpen ? (
               <form onSubmit={handleSubmit} className="space-y-5 p-6 sm:p-8">
                 {error && (
                   <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -398,16 +450,35 @@ export default function LandingPage({ pageSettings }) {
                   </label>
                 </div>
 
-                <label className="block text-sm font-bold text-slate-800">
-                  Branch or outlet <span className="font-normal text-slate-500">(optional)</span>
-                  <input
-                    name="kiosk"
-                    value={formData.kiosk}
-                    onChange={handleInputChange}
-                    maxLength="100"
-                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  />
-                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-bold text-slate-800">
+                    Agent username <span className="text-red-600">*</span>
+                    <input
+                      name="agentUsername"
+                      value={formData.agentUsername}
+                      onChange={handleInputChange}
+                      required
+                      maxLength="100"
+                      autoComplete="username"
+                      className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-800">
+                    Supervisor name <span className="text-red-600">*</span>
+                    <select
+                      name="supervisorName"
+                      value={formData.supervisorName}
+                      onChange={handleInputChange}
+                      required
+                      className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    >
+                      <option value="">Select a supervisor</option>
+                      {SUPERVISOR_NAMES.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
 
                 <div className="space-y-3">
                   <div>
@@ -445,7 +516,7 @@ export default function LandingPage({ pageSettings }) {
                     className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
                   />
                   <span>
-                    I agree that STL may store my name, contact number, and uploaded screenshots to
+                    I agree that STL may store my name, contact number, agent username, supervisor name, and uploaded screenshots to
                     administer this independent raffle and verify a claim. I understand the raffle is
                     not sponsored or endorsed by PCSO or the linked pages.
                   </span>
@@ -453,13 +524,24 @@ export default function LandingPage({ pageSettings }) {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !consent}
+                  disabled={isSubmitting || !consent || !entrySchedule.isOpen}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSubmitting ? 'Uploading proofs and generating ticket…' : 'Submit proofs and get my ticket'}
                   {!isSubmitting && <ArrowRight className="h-4 w-4" />}
                 </button>
               </form>
+            ) : (
+              <div role="status" className="p-6 sm:p-8">
+                <h3 className="text-xl font-black text-slate-950">
+                  {entrySchedule.state === 'upcoming' ? 'Entries are not open yet' : 'Entries are closed'}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {entrySchedule.state === 'upcoming' && `Please come back when entries open${pageSettings.entryStartAt ? ` on ${formatManilaDateTime(pageSettings.entryStartAt)} Philippines time` : ''}.`}
+                  {entrySchedule.state === 'ended' && 'The entry period has ended, so new raffle tickets can no longer be submitted.'}
+                  {entrySchedule.state === 'invalid' && 'The raffle schedule is not valid yet. Please contact the organizer.'}
+                </p>
+              </div>
             )}
           </div>
         </div>

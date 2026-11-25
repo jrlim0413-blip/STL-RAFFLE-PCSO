@@ -4,12 +4,14 @@ import AdminDashboard from './components/AdminDashboard';
 import { readApiResponse } from './utils/apiResponse';
 import { ArrowLeft, Gift, ShieldCheck } from 'lucide-react';
 
-const EMPTY_STATS = { total: 0, eligible: 0, flagged: 0, activeKiosks: 0 };
+const EMPTY_STATS = { total: 0, eligible: 0, flagged: 0, activeAgents: 0 };
 const DEFAULT_SETTINGS = {
   campaignName: 'STL Raffle',
   campaignUrl: '',
   announcement: 'STL Community Raffle: six rice prizes for six winners.',
-  prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.'
+  prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.',
+  entryStartAt: '',
+  entryEndAt: ''
 };
 
 export default function App() {

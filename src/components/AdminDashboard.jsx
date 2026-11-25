@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Award, Download, RotateCcw, Search, Settings, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
+import { fromManilaDateTimeInput, toManilaDateTimeInput } from '../utils/entrySchedule';
+
+function settingsDraft(source) {
+  return {
+    ...source,
+    entryStartAt: toManilaDateTimeInput(source.entryStartAt),
+    entryEndAt: toManilaDateTimeInput(source.entryEndAt)
+  };
+}
 
 export default function AdminDashboard({ entries = [], stats = {}, pageSettings, adminPasscode, onUpdateSettings, onRefresh }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -10,12 +19,12 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
   const [drawResults, setDrawResults] = useState([]);
   const [nextRound, setNextRound] = useState(1);
   const [nextPrize, setNextPrize] = useState('5 kg rice');
-  const [settings, setSettings] = useState(pageSettings);
+  const [settings, setSettings] = useState(() => settingsDraft(pageSettings));
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [error, setError] = useState('');
   const [activeProof, setActiveProof] = useState(null);
 
-  useEffect(() => setSettings(pageSettings), [pageSettings]);
+  useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
     let active = true;
     fetch('/api/draw', { headers: { 'x-admin-passcode': adminPasscode } })
@@ -40,7 +49,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
   }, [activeProof]);
 
   const filteredEntries = entries.filter((entry) =>
-    [entry.kiosk, entry.agent, entry.contact, entry.ticket]
+    [entry.agentUsername, entry.supervisorName, entry.agent, entry.contact, entry.ticket]
       .join(' ')
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
@@ -54,8 +63,16 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
   const saveSettings = async (event) => {
     event.preventDefault();
     setError('');
+    const updatedSettings = { ...settings };
+    for (const field of ['entryStartAt', 'entryEndAt']) {
+      updatedSettings[field] = fromManilaDateTimeInput(settings[field]);
+      if (settings[field] && !updatedSettings[field]) {
+        setError('Please enter valid opening and closing dates in Philippines time.');
+        return;
+      }
+    }
     try {
-      await onUpdateSettings(settings);
+      await onUpdateSettings(updatedSettings);
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 2500);
     } catch (saveError) {
@@ -179,7 +196,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
         <Metric label="Total entries" value={stats.total ?? entries.length} icon={<Users className="w-4 h-4" />} />
         <Metric label="Eligible" value={stats.eligible ?? entries.filter((e) => e.status === 'Eligible').length} icon={<Award className="w-4 h-4" />} />
         <Metric label="Needs review" value={stats.flagged ?? entries.filter((e) => e.status !== 'Eligible').length} icon={<Settings className="w-4 h-4" />} />
-        <Metric label="Branches" value={stats.activeKiosks ?? 0} icon={<Settings className="w-4 h-4" />} />
+        <Metric label="Agent usernames" value={stats.activeAgents ?? 0} icon={<Settings className="w-4 h-4" />} />
       </section>
 
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
@@ -197,6 +214,28 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
           <Field label="Announcement">
             <input name="announcement" value={settings.announcement || ''} onChange={updateSetting} maxLength="240" className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal" />
           </Field>
+          <Field label="Entries open (Philippines time)">
+            <input
+              name="entryStartAt"
+              type="datetime-local"
+              value={settings.entryStartAt || ''}
+              onChange={updateSetting}
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal"
+            />
+          </Field>
+          <Field label="Entries close (Philippines time)">
+            <input
+              name="entryEndAt"
+              type="datetime-local"
+              value={settings.entryEndAt || ''}
+              onChange={updateSetting}
+              min={settings.entryStartAt || undefined}
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal"
+            />
+          </Field>
+          <p className="md:col-span-2 -mt-2 text-xs text-slate-500">
+            Set both dates and times, or leave both empty to keep entries open without a schedule. Times use Asia/Manila (UTC+8).
+          </p>
           <div className="md:col-span-2 flex items-center justify-between gap-3">
             <p className="text-xs text-slate-500">
               Use only campaign details and links you are authorized to publish. This app does not connect to social accounts.
@@ -248,7 +287,8 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="p-3">Ticket</th><th className="p-3">Name</th><th className="p-3">Contact</th>
-                <th className="p-3">Branch</th><th className="p-3">Proof reference</th><th className="p-3">Status</th><th className="p-3">Action</th>
+                <th className="p-3">Agent username</th><th className="p-3">Supervisor</th>
+                <th className="p-3">Proof reference</th><th className="p-3">Status</th><th className="p-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -257,7 +297,8 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
                   <td className="p-3 font-mono font-bold text-blue-700">{entry.ticket}</td>
                   <td className="p-3">{entry.agent}</td>
                   <td className="p-3">{entry.contact}</td>
-                  <td className="p-3">{entry.kiosk || '—'}</td>
+                  <td className="p-3">{entry.agentUsername || '—'}</td>
+                  <td className="p-3">{entry.supervisorName || '—'}</td>
                   <td className="p-3">
                     <div className="flex flex-wrap gap-2">
                       {(entry.proofs || []).map((proof) => (
@@ -281,7 +322,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
                   </td>
                 </tr>
               )) : (
-                <tr><td className="p-6 text-center text-slate-500" colSpan="7">No entries found.</td></tr>
+                <tr><td className="p-6 text-center text-slate-500" colSpan="8">No entries found.</td></tr>
               )}
             </tbody>
           </table>

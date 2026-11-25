@@ -28,6 +28,9 @@ there is no admin link or operations tab on the landing page.
 - Store proof images outside the public web directory and protect admin/proof APIs with the organizer passcode.
 - Review entries and mark them eligible or for review.
 - Configure campaign details and an optional authorized campaign link.
+- Set entry opening and closing times in Philippines time; the landing page shows a live countdown,
+  and the API blocks proof uploads and submissions outside the configured window. With no schedule,
+  entries remain open as before.
 - Draw a random eligible winner and export entries as CSV.
 - Store full participant details and screenshots in private Supabase Storage buckets; keep only
   ticket, a keyed contact hash, status, and timestamp in the entry table.
@@ -35,7 +38,8 @@ there is no admin link or operations tab on the landing page.
 - Keep using local JSON files and proof files during development without Supabase credentials.
 - Draw five distinct 5-kg rice winners first, followed by one distinct 25-kg rice winner.
 
-The entry form asks for participant name, contact number, and three screenshots. Never upload
+The entry form asks for participant name, contact number, required agent username and supervisor
+selection, and three screenshots. Never upload
 passwords, authentication codes, or private messages. In production, full participant records are
 stored as private JSON objects in the `raffle-entries` bucket, and screenshot proofs are stored in
 the private `raffle-proofs` bucket. Database rows keep only raffle indexes and draw metadata. Locally,
@@ -71,10 +75,11 @@ during maintenance before accepting new entries.
 
 ## API
 
-- `GET /api/settings` and `POST /api/settings` - Read/update campaign details.
+- `GET /api/settings` and `POST /api/settings` - Read/update campaign details and the entry schedule.
 - `POST /api/admin/session` - Verify the configured organizer passcode.
 - `GET /api/entries` - List entries and summary counts.
 - `POST /api/submit` - Create an entry and ticket.
+- `POST /api/proofs/upload` - Upload entry proof images while the entry window is open.
 - `POST /api/entries/:ticket/toggle` - Switch an entry between eligible and review.
 - `GET /api/draw` and `POST /api/draw` - Read the draw history and select the next distinct winner.
 - `GET /api/proofs/:filename` - View a screenshot proof.
