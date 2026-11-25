@@ -162,16 +162,20 @@ export default function App() {
         )}
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-5 px-4 text-center text-xs text-slate-500">
-        <p>
-          Independent raffle campaign. Not affiliated with or endorsed by any social platform or
-          government agency. This site will never ask for your social media password.
-        </p>
-        <p className="mt-2">
-          <a href="/privacy.html" className="underline hover:text-slate-800">Privacy notice</a>
-          {' · '}
-          <a href="/data-deletion.html" className="underline hover:text-slate-800">Request data deletion</a>
-        </p>
+      <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500">
+        <div className="mx-auto max-w-7xl">
+          <p className="leading-5">
+            Independent raffle organized by STL. PCSO and the linked pages are featured for promotion
+            only and do not sponsor or endorse this raffle. This site is not affiliated with any social
+            platform or government agency, never asks for social media passwords, and does not use social
+            account login.
+          </p>
+          <p className="mt-2">
+            <a href="/privacy.html" className="underline hover:text-slate-800">Privacy notice</a>
+            {' · '}
+            <a href="/data-deletion.html" className="underline hover:text-slate-800">Request data deletion</a>
+          </p>
+        </div>
       </footer>
     </div>
   );

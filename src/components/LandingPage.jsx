@@ -6,16 +6,19 @@ const PROOF_PAGES = [
   {
     id: 'melquiades',
     name: 'Melquiades "Mel" Robles',
+    image: '/images/pages/melquiades-mel-robles.jpg',
     url: 'https://www.facebook.com/profile.php?id=61564884082252'
   },
   {
     id: 'pcso',
     name: 'PCSO',
+    image: '/images/pages/pcso.jpg',
     url: 'https://www.facebook.com/pcsoofficialsocialmedia'
   },
   {
     id: 'situation-report',
     name: 'The Situation Report',
+    image: '/images/pages/situation-report.jpg',
     url: 'https://www.facebook.com/SituationReportPH'
   }
 ];
@@ -220,25 +223,35 @@ export default function LandingPage({ pageSettings }) {
 
           <div className="mt-9 grid gap-4 md:grid-cols-3">
             {PROOF_PAGES.map((page, index) => (
-              <article key={page.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md sm:p-6">
-                <div className="flex items-center justify-between">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-black text-blue-800">
-                    0{index + 1}
-                  </span>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Required page</span>
+              <article key={page.id} className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+                <div className="relative aspect-video bg-slate-100">
+                  <img
+                    src={page.image}
+                    alt={`Screenshot of ${page.name} Facebook page`}
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                  />
                 </div>
-                <h3 className="mt-5 text-lg font-extrabold text-slate-950">{page.name}</h3>
-                <p className="mt-2 flex-1 text-sm leading-6 text-slate-600">
-                  Follow the page and engage naturally with its campaign-related posts. Take a screenshot to upload below.
-                </p>
-                <a
-                  href={page.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 transition hover:bg-blue-100"
-                >
-                  Visit page <ExternalLink className="h-4 w-4" />
-                </a>
+                <div className="flex flex-1 flex-col p-5 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-black text-blue-800">
+                      0{index + 1}
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Required page</span>
+                  </div>
+                  <h3 className="mt-5 text-lg font-extrabold text-slate-950">{page.name}</h3>
+                  <p className="mt-2 flex-1 text-sm leading-6 text-slate-600">
+                    Follow the page and engage naturally with its campaign-related posts. Take a screenshot to upload below.
+                  </p>
+                  <a
+                    href={page.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 transition hover:bg-blue-100"
+                  >
+                    Visit page <ExternalLink className="h-4 w-4" />
+                  </a>
+                </div>
               </article>
             ))}
           </div>
@@ -428,12 +441,6 @@ export default function LandingPage({ pageSettings }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pt-8">
-        <p className="text-center text-xs leading-5 text-slate-500">
-          Independent raffle organized by STL. PCSO and the linked pages are featured for promotion
-          only; they do not sponsor or endorse this raffle. No social account login is used.
-        </p>
-      </section>
     </div>
   );
 }
