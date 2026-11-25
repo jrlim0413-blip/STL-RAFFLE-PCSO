@@ -29,7 +29,8 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     ...process.env,
     PORT: String(port),
     ADMIN_PASSCODE: adminPasscode,
-    RAFFLE_DATA_DIR: dataDir
+    RAFFLE_DATA_DIR: dataDir,
+    RAFFLE_SKIP_ENV_FILE: '1'
   };
   delete childEnv.SUPABASE_URL;
   delete childEnv.SUPABASE_SERVICE_ROLE_KEY;

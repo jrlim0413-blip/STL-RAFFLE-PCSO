@@ -14,6 +14,9 @@ media login.
 
 The Express API runs on `http://localhost:3000`. Without Supabase variables, local data and proofs
 are stored under `data/`. To build the frontend, run `npm run build`.
+The backend loads `.env` at the project root or `src/.env` for local development. Use
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` there for Supabase; keep the service-role key private
+and do not use a `VITE_` prefix.
 
 The public participant landing page is `/`. The admin console is available directly at `/admin`;
 there is no admin link or operations tab on the landing page.
