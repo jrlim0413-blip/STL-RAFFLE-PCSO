@@ -12,8 +12,8 @@ media login.
 3. Start the frontend and API with `npm run dev`.
 4. Open the Vite URL shown in the terminal (usually `http://localhost:5173`).
 
-The Express API runs on `http://localhost:3000`. To build the frontend, run `npm run build`.
-Set `ADMIN_PASSCODE` in the deployment platform's secret environment configuration before deploying.
+The Express API runs on `http://localhost:3000`. Without Supabase variables, local data and proofs
+are stored under `data/`. To build the frontend, run `npm run build`.
 
 The public participant landing page is `/`. The admin console is available directly at `/admin`;
 there is no admin link or operations tab on the landing page.
@@ -26,12 +26,31 @@ there is no admin link or operations tab on the landing page.
 - Review entries and mark them eligible or for review.
 - Configure campaign details and an optional authorized campaign link.
 - Draw a random eligible winner and export entries as CSV.
-- Store campaign settings and entries in JSON files under `data/`.
+- Store campaign settings, entries, draw state, and private proofs in Supabase when deployed.
+- Keep using local JSON files and proof files during development without Supabase credentials.
 - Draw five distinct 5-kg rice winners first, followed by one distinct 25-kg rice winner.
 
 The entry form asks for participant name, contact number, and three screenshots. Never upload
-passwords, authentication codes, or private messages. Screenshot proofs are stored in `data/proofs/`,
-which is excluded from Git.
+passwords, authentication codes, or private messages. Screenshot proofs are uploaded individually and are stored in the private `raffle-proofs` Supabase
+bucket in production, or `data/proofs/` locally. The private Supabase service-role key is used only
+by the server and must never be added to client-side variables.
+
+## Deploy to Vercel with Supabase
+
+1. Create a Supabase project and open its SQL Editor.
+2. Run [`supabase/schema.sql`](./supabase/schema.sql) to create the tables, private proof bucket,
+   and atomic raffle draw functions.
+3. In the Vercel project settings, add these environment variables for Production (and Preview if
+   needed):
+   - `SUPABASE_URL` - the Supabase project URL.
+   - `SUPABASE_SERVICE_ROLE_KEY` - the project's service-role key; keep it secret.
+   - `ADMIN_PASSCODE` - a private organizer passcode of at least 12 characters.
+4. Redeploy the project. The Vercel function in `api/` serves the Express API, while Vite serves
+   the public site. No Supabase credentials are needed in browser-visible variables.
+
+Set `SUPABASE_PROOFS_BUCKET` only if you change the bucket name in the SQL setup; the default is
+`raffle-proofs`. Do not set only one of `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+For local development, leave both unset to use the JSON/file store.
 
 ## API
 

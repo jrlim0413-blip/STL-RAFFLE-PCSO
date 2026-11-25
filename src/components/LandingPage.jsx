@@ -23,15 +23,6 @@ const EMPTY_FORM = { agent: '', contact: '', kiosk: '' };
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
-function readScreenshot(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function LandingPage({ pageSettings }) {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [proofFiles, setProofFiles] = useState({});
@@ -69,11 +60,21 @@ export default function LandingPage({ pageSettings }) {
     setError('');
 
     try {
-      const proofScreenshots = await Promise.all(PROOF_PAGES.map(async (page) => {
+      const proofScreenshots = [];
+      for (const page of PROOF_PAGES) {
         const file = proofFiles[page.id];
         if (!file) throw new Error(`Please upload a screenshot for ${page.name}.`);
-        return { pageKey: page.id, dataUrl: await readScreenshot(file) };
-      }));
+        const uploadResponse = await fetch('/api/proofs/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': file.type },
+          body: file
+        });
+        const uploadData = await uploadResponse.json();
+        if (!uploadResponse.ok) {
+          throw new Error(uploadData.error || `Could not upload the screenshot for ${page.name}.`);
+        }
+        proofScreenshots.push({ pageKey: page.id, filename: uploadData.filename });
+      }
 
       const response = await fetch('/api/submit', {
         method: 'POST',

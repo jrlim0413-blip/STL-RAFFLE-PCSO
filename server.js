@@ -4,17 +4,24 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  createEntry,
+  drawNext,
+  getDraw,
+  getProof,
+  getSettings,
+  listEntries,
+  proofExists,
+  saveSettings,
+  toggleEntry,
+  uploadProof
+} from './lib/raffleStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || '';
-const DATA_DIR = path.join(__dirname, 'data');
-const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
-const DRAW_FILE = path.join(DATA_DIR, 'draw.json');
-const PROOFS_DIR = path.join(DATA_DIR, 'proofs');
 const MAX_PROOF_SIZE = 4 * 1024 * 1024;
 const ADMIN_AUTH_WINDOW_MS = 15 * 60 * 1000;
 const ADMIN_AUTH_MAX_FAILURES = 5;
@@ -25,12 +32,25 @@ const IMAGE_TYPES = {
   'image/jpeg': { extension: 'jpg', signature: 'ffd8ff' },
   'image/webp': { extension: 'webp', signature: null }
 };
+const PROOF_MIME_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
 
 app.use(cors());
-app.use(express.json({ limit: '20mb' }));
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(PROOFS_DIR)) fs.mkdirSync(PROOFS_DIR, { recursive: true });
+app.post(
+  '/api/proofs/upload',
+  express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '4mb' }),
+  asyncRoute(async (req, res) => {
+    const mimeType = req.get('content-type');
+    let decoded;
+    try {
+      decoded = decodeProof(req.body, mimeType);
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    const filename = await uploadProof(decoded);
+    res.status(201).json({ success: true, filename });
+  })
+);
+app.use(express.json({ limit: '100kb' }));
 
 const DEFAULT_SETTINGS = {
   campaignName: 'STL Raffle',
@@ -38,34 +58,6 @@ const DEFAULT_SETTINGS = {
   announcement: 'STL Community Raffle: six rice prizes for six winners.',
   prizeDescription: 'Five winners receive 5 kg of rice each. The sixth and final winner receives 25 kg.'
 };
-
-function readJsonFile(file, fallback) {
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
-    return fallback;
-  }
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-function writeJsonFile(file, value) {
-  fs.writeFileSync(file, JSON.stringify(value, null, 2));
-}
-
-function readEntries() {
-  return readJsonFile(ENTRIES_FILE, []);
-}
-
-function writeEntries(entries) {
-  writeJsonFile(ENTRIES_FILE, entries);
-}
-
-function readSettings() {
-  return { ...DEFAULT_SETTINGS, ...readJsonFile(SETTINGS_FILE, DEFAULT_SETTINGS) };
-}
-
-function writeSettings(settings) {
-  writeJsonFile(SETTINGS_FILE, settings);
-}
 
 function isAdminPasscodeValid(candidate) {
   if (typeof candidate !== 'string' || ADMIN_PASSCODE.length < 12) return false;
@@ -88,13 +80,15 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function decodeProof(dataUrl) {
-  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl || '');
-  if (!match) throw new Error('Each proof must be a PNG, JPEG, or WebP screenshot.');
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
 
-  const [, mimeType, encoded] = match;
-  const image = Buffer.from(encoded, 'base64');
-  if (!image.length || image.length > MAX_PROOF_SIZE || image.toString('base64') !== encoded) {
+function decodeProof(image, mimeType) {
+  if (!Buffer.isBuffer(image) || !IMAGE_TYPES[mimeType]) {
+    throw new Error('Each proof must be a PNG, JPEG, or WebP screenshot.');
+  }
+  if (!image.length || image.length > MAX_PROOF_SIZE) {
     throw new Error('Each screenshot must be no larger than 4 MB.');
   }
 
@@ -142,13 +136,13 @@ app.post('/api/admin/session', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/settings', (req, res) => {
-  res.json({ success: true, settings: readSettings() });
-});
+app.get('/api/settings', asyncRoute(async (req, res) => {
+  res.json({ success: true, settings: await getSettings(DEFAULT_SETTINGS) });
+}));
 
-app.post('/api/settings', requireAdmin, (req, res) => {
+app.post('/api/settings', requireAdmin, asyncRoute(async (req, res) => {
   const body = req.body || {};
-  const current = readSettings();
+  const current = await getSettings(DEFAULT_SETTINGS);
   const updates = {};
   for (const field of ['campaignName', 'campaignUrl', 'announcement', 'prizeDescription']) {
     if (body[field] !== undefined) {
@@ -171,13 +165,13 @@ app.post('/api/settings', requireAdmin, (req, res) => {
   }
 
   const settings = { ...current, ...updates };
-  writeSettings(settings);
+  await saveSettings(settings);
   res.json({ success: true, settings });
-});
+}));
 
-app.get('/api/entries', requireAdmin, (req, res) => {
+app.get('/api/entries', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const entries = readEntries();
+  const entries = await listEntries();
   const eligible = entries.filter((entry) => entry.status === 'Eligible').length;
   const flagged = entries.length - eligible;
   const activeKiosks = new Set(entries.map((entry) => entry.kiosk).filter(Boolean)).size;
@@ -187,21 +181,21 @@ app.get('/api/entries', requireAdmin, (req, res) => {
     data: entries,
     stats: { total: entries.length, eligible, flagged, activeKiosks }
   });
-});
+}));
 
-app.get('/api/proofs/:filename', requireAdmin, (req, res) => {
+app.get('/api/proofs/:filename', requireAdmin, asyncRoute(async (req, res) => {
   if (!/^[a-f0-9]{32}\.(png|jpg|webp)$/.test(req.params.filename)) {
     return res.status(404).json({ success: false, error: 'Proof not found.' });
   }
-  const proofPath = path.join(PROOFS_DIR, req.params.filename);
-  if (!fs.existsSync(proofPath)) return res.status(404).json({ success: false, error: 'Proof not found.' });
+  const proof = await getProof(req.params.filename);
+  if (!proof) return res.status(404).json({ success: false, error: 'Proof not found.' });
   res.set('Cache-Control', 'no-store');
   res.set('X-Content-Type-Options', 'nosniff');
-  res.type(path.extname(proofPath));
-  res.sendFile(proofPath);
-});
+  res.type(path.extname(req.params.filename));
+  res.send(proof);
+}));
 
-app.post('/api/submit', (req, res) => {
+app.post('/api/submit', asyncRoute(async (req, res) => {
   const body = req.body || {};
   for (const field of ['agent', 'contact', 'kiosk']) {
     if (body[field] !== undefined && typeof body[field] !== 'string') {
@@ -221,135 +215,84 @@ app.post('/api/submit', (req, res) => {
     return res.status(400).json({ success: false, error: 'One or more fields exceed the allowed length.' });
   }
 
-  const entries = readEntries();
   const normalizedContact = contact.replace(/\D/g, '');
   if (!normalizedContact) {
     return res.status(400).json({ success: false, error: 'Contact number must contain at least one digit.' });
   }
-  if (entries.some((entry) => (entry.contact || '').replace(/\D/g, '') === normalizedContact)) {
-    return res.status(409).json({ success: false, error: 'An entry with this contact number already exists.' });
-  }
-
   if (!Array.isArray(body.proofScreenshots) || body.proofScreenshots.length !== 3) {
     return res.status(400).json({ success: false, error: 'Upload one screenshot for each of the three pages.' });
   }
 
-  let decodedProofs;
-  try {
-    const seenPages = new Set();
-    decodedProofs = body.proofScreenshots.map((proof) => {
-      if (!proof || !PROOF_PAGES.has(proof.pageKey) || seenPages.has(proof.pageKey)) {
-        throw new Error('Upload one screenshot for each of the three required pages.');
-      }
-      seenPages.add(proof.pageKey);
-      return { pageKey: proof.pageKey, ...decodeProof(proof.dataUrl) };
-    });
-    if (seenPages.size !== PROOF_PAGES.size) {
-      throw new Error('Upload one screenshot for each of the three required pages.');
+  const seenPages = new Set();
+  for (const proof of body.proofScreenshots) {
+    if (!proof || !PROOF_PAGES.has(proof.pageKey) || seenPages.has(proof.pageKey) ||
+        typeof proof.filename !== 'string' || !/^[a-f0-9]{32}\.(png|jpg|webp)$/.test(proof.filename)) {
+      return res.status(400).json({ success: false, error: 'Upload one screenshot for each of the three required pages.' });
     }
-  } catch (error) {
-    return res.status(400).json({ success: false, error: error.message });
+    seenPages.add(proof.pageKey);
+    if (!(await proofExists(proof.filename))) {
+      return res.status(400).json({ success: false, error: 'A screenshot upload could not be found. Please upload it again.' });
+    }
+  }
+  if (seenPages.size !== PROOF_PAGES.size) {
+    return res.status(400).json({ success: false, error: 'Upload one screenshot for each of the three required pages.' });
   }
 
   let ticket;
-  do {
-    ticket = `STL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-  } while (entries.some((entry) => entry.ticket === ticket));
-
-  const savedProofPaths = [];
-  let proofs;
-  const entry = {
-    ticket,
-    kiosk,
-    agent,
-    contact,
-    proofs: [],
-    time: new Date().toISOString(),
-    status: 'Review'
-  };
-  try {
-    proofs = decodedProofs.map(({ pageKey, image, extension, mimeType }) => {
-      const filename = `${crypto.randomBytes(16).toString('hex')}.${extension}`;
-      const proofPath = path.join(PROOFS_DIR, filename);
-      fs.writeFileSync(proofPath, image, { flag: 'wx' });
-      savedProofPaths.push(proofPath);
-      return { pageKey, filename, mimeType };
-    });
-    entry.proofs = proofs;
-    entries.unshift(entry);
-    writeEntries(entries);
-  } catch (error) {
-    for (const proofPath of savedProofPaths) {
-      if (fs.existsSync(proofPath)) fs.unlinkSync(proofPath);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = `STL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    try {
+      const entry = {
+        ticket: candidate,
+        kiosk,
+        agent,
+        contact,
+        proofs: body.proofScreenshots.map(({ pageKey, filename }) => ({
+          pageKey,
+          filename,
+          mimeType: PROOF_MIME_TYPES[path.extname(filename)]
+        })),
+        time: new Date().toISOString(),
+        status: 'Review'
+      };
+      await createEntry(entry);
+      ticket = entry;
+      break;
+    } catch (error) {
+      if (error.status === 409) {
+        return res.status(409).json({ success: false, error: error.message });
+      }
+      if (error.code === '23505' && attempt < 19) continue;
+      console.error('Unable to save raffle entry:', error);
+      return res.status(500).json({ success: false, error: 'Unable to save the entry. Please retry.' });
     }
-    console.error('Unable to save raffle entry or screenshot proofs:', error);
-    return res.status(500).json({ success: false, error: 'Unable to save the entry and screenshots. Please retry.' });
   }
-  res.status(201).json({ success: true, ticket: entry });
-});
+  if (!ticket) {
+    return res.status(500).json({ success: false, error: 'Could not generate a unique ticket. Please retry.' });
+  }
+  res.status(201).json({ success: true, ticket });
+}));
 
-app.post('/api/entries/:ticket/toggle', requireAdmin, (req, res) => {
-  const entries = readEntries();
-  const entry = entries.find((item) => item.ticket === req.params.ticket);
+app.post('/api/entries/:ticket/toggle', requireAdmin, asyncRoute(async (req, res) => {
+  const entry = await toggleEntry(req.params.ticket);
   if (!entry) return res.status(404).json({ success: false, error: 'Ticket not found.' });
 
-  entry.status = entry.status === 'Eligible' ? 'Review' : 'Eligible';
-  writeEntries(entries);
   res.json({ success: true, updated: entry });
-});
+}));
 
-app.get('/api/draw', requireAdmin, (req, res) => {
+app.get('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const draw = readJsonFile(DRAW_FILE, { results: [] });
-  const nextRound = draw.results.length + 1;
-  res.json({
-    success: true,
-    results: draw.results,
-    nextRound: nextRound <= 6 ? nextRound : null,
-    nextPrize: nextRound <= 5 ? '5 kg rice' : nextRound === 6 ? '25 kg rice' : null
-  });
-});
+  res.json({ success: true, ...(await getDraw()) });
+}));
 
-app.post('/api/draw', requireAdmin, (req, res) => {
-  const draw = readJsonFile(DRAW_FILE, { results: [] });
-  const nextRound = draw.results.length + 1;
-  if (nextRound > 6) {
-    return res.status(409).json({ success: false, error: 'All six raffle prizes have already been drawn.' });
-  }
+app.post('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
+  const result = await drawNext();
+  res.json({ success: true, ...result });
+}));
 
-  const previousWinners = new Set(draw.results.map((result) => result.winner.ticket));
-  const eligible = readEntries().filter((entry) =>
-    entry.status === 'Eligible' && !previousWinners.has(entry.ticket)
-  );
-  const remainingWinners = 7 - nextRound;
-  if (eligible.length < remainingWinners) {
-    return res.status(400).json({
-      success: false,
-      error: `At least ${remainingWinners} unique eligible entries are needed to continue the six-winner draw.`
-    });
-  }
-
-  const selected = eligible[Math.floor(Math.random() * eligible.length)];
-  const result = {
-    round: nextRound,
-    prize: nextRound === 6 ? '25 kg rice' : '5 kg rice',
-    winner: selected,
-    drawnAt: new Date().toISOString()
-  };
-  draw.results.push(result);
-  writeJsonFile(DRAW_FILE, draw);
-  res.json({
-    success: true,
-    ...result,
-    results: draw.results,
-    nextRound: nextRound < 6 ? nextRound + 1 : null,
-    nextPrize: nextRound < 5 ? '5 kg rice' : nextRound === 5 ? '25 kg rice' : null
-  });
-});
-
-app.get('/api/export', requireAdmin, (req, res) => {
+app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const entries = readEntries();
+  const entries = await listEntries();
   const columns = ['Ticket Code', 'Branch or Outlet', 'Name', 'Contact Number', 'Proof Pages', 'Timestamp', 'Status'];
   const rows = entries.map((entry) =>
     [
@@ -367,14 +310,28 @@ app.get('/api/export', requireAdmin, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename=raffle-entries.csv');
   res.send(csv);
-});
+}));
 
 const distPath = path.join(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
+if (!process.env.VERCEL && fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
 
-app.listen(PORT, () => {
-  console.log(`Raffle backend running at http://localhost:${PORT}`);
+app.use((error, req, res, next) => {
+  console.error('Raffle API request failed:', error);
+  if (res.headersSent) return next(error);
+  const status = Number.isInteger(error.status) ? error.status : 500;
+  res.status(status).json({
+    success: false,
+    error: status === 500 ? 'A server error occurred. Please try again.' : error.message
+  });
 });
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Raffle backend running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;
