@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
+import { readApiResponse } from './utils/apiResponse';
 import { ArrowLeft, Gift, ShieldCheck } from 'lucide-react';
 
 const EMPTY_STATS = { total: 0, eligible: 0, flagged: 0, activeKiosks: 0 };
@@ -26,8 +27,7 @@ export default function App() {
       const response = await fetch('/api/entries', {
         headers: { 'x-admin-passcode': passcode }
       });
-      if (!response.ok) throw new Error('Could not load raffle entries.');
-      const data = await response.json();
+      const data = await readApiResponse(response, 'Could not load raffle entries.');
       setEntries(data.data || []);
       setStats(data.stats || EMPTY_STATS);
       setLoadError('');
@@ -42,12 +42,11 @@ export default function App() {
   const fetchSettings = async () => {
     try {
       const response = await fetch('/api/settings');
-      if (!response.ok) throw new Error('Could not load campaign settings.');
-      const data = await response.json();
+      const data = await readApiResponse(response, 'Could not load campaign settings.');
       if (data.settings) setPageSettings({ ...DEFAULT_SETTINGS, ...data.settings });
     } catch (error) {
       console.error('Failed to load campaign settings:', error);
-      setLoadError('Could not load campaign settings. Please try refreshing.');
+      setLoadError(error.message || 'Could not load campaign settings. Please try refreshing.');
     }
   };
 
@@ -60,8 +59,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode: adminPasscode })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Organizer passcode is incorrect.');
+      await readApiResponse(response, 'Could not sign in to the admin dashboard.');
       if (!(await fetchEntries(adminPasscode))) {
         throw new Error('Could not load the admin dashboard.');
       }
@@ -77,8 +75,7 @@ export default function App() {
       headers: { 'Content-Type': 'application/json', 'x-admin-passcode': adminPasscode },
       body: JSON.stringify(updates)
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not save campaign settings.');
+    const data = await readApiResponse(response, 'Could not save campaign settings.');
     setPageSettings({ ...DEFAULT_SETTINGS, ...data.settings });
   };
 

@@ -7,11 +7,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { readApiResponse } from '../src/utils/apiResponse.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const adminPasscode = 'test-organizer-passcode';
 const png = Buffer.from('89504e470d0a1a0a-test-image', 'hex');
 const proofPages = ['melquiades', 'pcso', 'situation-report'];
+
+test('HTML 404 API responses produce a useful message instead of a JSON parse error', async () => {
+  const response = new Response('The page could not be found', {
+    status: 404,
+    headers: { 'Content-Type': 'text/html' }
+  });
+  await assert.rejects(
+    readApiResponse(response, 'Could not sign in to the admin dashboard.'),
+    /API route was not found/
+  );
+});
 
 async function unusedPort() {
   const listener = net.createServer();

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Copy, ExternalLink, Gift, ShieldCheck, Ticket, Upload } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Copy, ExternalLink, Gift, ShieldCheck, Ticket, Upload, Users } from 'lucide-react';
+import { readApiResponse } from '../utils/apiResponse';
 
 const PROOF_PAGES = [
   {
@@ -69,10 +70,7 @@ export default function LandingPage({ pageSettings }) {
           headers: { 'Content-Type': file.type },
           body: file
         });
-        const uploadData = await uploadResponse.json();
-        if (!uploadResponse.ok) {
-          throw new Error(uploadData.error || `Could not upload the screenshot for ${page.name}.`);
-        }
+        const uploadData = await readApiResponse(uploadResponse, `Could not upload the screenshot for ${page.name}.`);
         proofScreenshots.push({ pageKey: page.id, filename: uploadData.filename });
       }
 
@@ -81,8 +79,7 @@ export default function LandingPage({ pageSettings }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, consent, proofScreenshots })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not submit your entry.');
+      const data = await readApiResponse(response, 'Could not submit your entry.');
       setGeneratedTicket(data.ticket);
       setFormData(EMPTY_FORM);
       setProofFiles({});
@@ -108,225 +105,333 @@ export default function LandingPage({ pageSettings }) {
   };
 
   return (
-    <div className="pb-16">
-      <div className="bg-gradient-to-r from-blue-950 via-blue-800 to-blue-950 text-white px-4 py-2 text-center text-xs font-bold">
-        STL ang organizer ng raffle na ito. Hindi ito sponsored o endorsed ng PCSO o ng mga naka-link na page.
+    <div className="bg-white pb-16">
+      <div className="border-b border-blue-100 bg-blue-50/70 px-4 py-2.5">
+        <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 text-center text-xs font-semibold text-blue-950">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-blue-700" />
+          <span>Independent STL raffle. Not sponsored or endorsed by PCSO or the linked pages.</span>
+        </div>
       </div>
 
-      <section className="relative overflow-hidden bg-white border-b border-slate-200 px-4 py-12 sm:py-16">
-        <div className="absolute -top-20 right-0 w-80 h-80 bg-amber-100 rounded-full blur-3xl opacity-70 pointer-events-none" />
-        <div className="relative max-w-5xl mx-auto">
-          <div className="flex items-center justify-center gap-5 mb-8">
-            <img src="/images/stl-logo.png" alt="STL" className="w-20 h-20 sm:w-24 sm:h-24 object-contain" />
-            <div className="h-14 border-l border-slate-200" />
-            <img src="/images/lucky-betplay-logo.png" alt="Lucky Betplay Corporation" className="w-36 h-20 sm:w-48 sm:h-24 object-contain" />
+      <section className="relative overflow-hidden border-b border-slate-200 bg-white px-4 py-10 sm:py-14">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-blue-50" />
+        <div className="pointer-events-none absolute -bottom-36 left-1/3 h-72 w-72 rounded-full bg-amber-50/70" />
+        <div className="relative mx-auto max-w-7xl">
+          <header className="mb-10 flex flex-wrap items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <img src="/images/stl-logo.png" alt="STL" className="h-14 w-14 object-contain sm:h-16 sm:w-16" />
+              <span className="h-10 border-l border-slate-200" />
+              <img
+                src="/images/lucky-betplay-logo.png"
+                alt="Lucky Betplay Corporation"
+                className="h-12 w-28 object-contain sm:h-14 sm:w-36"
+              />
+            </div>
+            <a
+              href="#entry-form"
+              className="hidden items-center gap-2 rounded-full border border-blue-200 bg-white px-5 py-2.5 text-sm font-bold text-blue-800 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 sm:inline-flex"
+            >
+              Join the raffle <ArrowRight className="h-4 w-4" />
+            </a>
+          </header>
+
+          <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
+            <div className="max-w-2xl">
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-extrabold uppercase tracking-wide text-amber-900">
+                <Gift className="h-4 w-4 text-amber-700" />
+                Community rice raffle
+              </span>
+              <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
+                {pageSettings.campaignName || 'STL Raffle'}
+              </h1>
+              <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
+                Join the community, show your support for three pages, and get your raffle ticket ready
+                for a chance to take home rice prizes.
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <a
+                  href="#entry-form"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                >
+                  Enter the raffle <ArrowRight className="h-4 w-4" />
+                </a>
+                <a
+                  href="#how-it-works"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50"
+                >
+                  See how it works
+                </a>
+              </div>
+              <div className="mt-8 flex flex-wrap gap-3 text-sm">
+                <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-200">
+                  <Users className="h-4 w-4 text-blue-700" />
+                  6 winners
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-200">
+                  <Upload className="h-4 w-4 text-blue-700" />
+                  3 screenshot proofs
+                </div>
+              </div>
+            </div>
+
+            <aside className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-700">The prizes</p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
+                    Six chances to win
+                  </h2>
+                </div>
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-sm ring-1 ring-slate-200">
+                  <Gift className="h-6 w-6" />
+                </span>
+              </div>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-blue-100 bg-white p-5">
+                  <span className="text-xs font-extrabold uppercase tracking-wide text-blue-700">Draws 1–5</span>
+                  <p className="mt-3 text-3xl font-black text-slate-950">5 kg</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">of rice for each of 5 winners</p>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                  <span className="text-xs font-extrabold uppercase tracking-wide text-amber-800">Final draw</span>
+                  <p className="mt-3 text-3xl font-black text-slate-950">25 kg</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">of rice for 1 final winner</p>
+                </div>
+              </div>
+              <p className="mt-5 border-t border-slate-200 pt-4 text-sm leading-6 text-slate-600">
+                Winners are drawn in order: five 5-kg prizes first, then the 25-kg prize last.
+              </p>
+            </aside>
           </div>
-          <div className="text-center">
-            <span className="inline-flex items-center gap-2 bg-amber-100 text-amber-900 border border-amber-300 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wide">
-              <Gift className="w-4 h-4" />
-              Community Rice Raffle
-            </span>
-            <h1 className="text-3xl sm:text-5xl font-black tracking-tight mt-5 text-slate-950">
-              {pageSettings.campaignName || 'STL Raffle'}
-            </h1>
-            <p className="text-slate-600 mt-4 max-w-2xl mx-auto">
-              Follow the three pages below, engage genuinely with their posts, and submit one screenshot
-              from each page to receive your raffle ticket.
-            </p>
-            <p className="text-sm font-bold text-blue-900 mt-3">
-              Six winners: five winners of 5 kg rice, followed by one final winner of 25 kg rice.
+        </div>
+      </section>
+
+      <section id="how-it-works" className="scroll-mt-8 bg-white px-4 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-blue-700">Simple to join</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+              Your ticket starts with three pages
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
+              Follow each page, engage with its posts, and upload one screenshot per page as proof.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-10">
+          <div className="mt-9 grid gap-4 md:grid-cols-3">
             {PROOF_PAGES.map((page, index) => (
-              <article key={page.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col">
-                <span className="text-xs font-black text-blue-700 uppercase">Page {index + 1}</span>
-                <h2 className="font-extrabold text-slate-900 mt-2">{page.name}</h2>
-                <p className="text-xs text-slate-500 mt-1 flex-1">
-                  Follow the page and engage naturally with its campaign-related posts.
+              <article key={page.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md sm:p-6">
+                <div className="flex items-center justify-between">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-black text-blue-800">
+                    0{index + 1}
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Required page</span>
+                </div>
+                <h3 className="mt-5 text-lg font-extrabold text-slate-950">{page.name}</h3>
+                <p className="mt-2 flex-1 text-sm leading-6 text-slate-600">
+                  Follow the page and engage naturally with its campaign-related posts. Take a screenshot to upload below.
                 </p>
                 <a
                   href={page.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 mt-4 rounded-lg bg-blue-700 hover:bg-blue-800 text-white px-3 py-2.5 text-sm font-bold"
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 transition hover:bg-blue-100"
                 >
-                  Open page <ExternalLink className="w-4 h-4" />
+                  Visit page <ExternalLink className="h-4 w-4" />
                 </a>
               </article>
             ))}
           </div>
-
-          <div className="mt-8 rounded-2xl bg-blue-50 border border-blue-200 p-5">
-            <h2 className="font-black text-blue-950">Six rice prizes, in draw order</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-              <div className="rounded-xl bg-white border border-blue-100 p-4">
-                <span className="text-xs uppercase font-bold text-blue-700">Draws 1-5</span>
-                <p className="font-extrabold text-slate-900 mt-1">5 winners receive 5 kg rice each</p>
-              </div>
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-                <span className="text-xs uppercase font-bold text-amber-800">Draw 6 - final draw</span>
-                <p className="font-extrabold text-slate-900 mt-1">1 winner receives 25 kg rice</p>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
-      <section className="max-w-3xl mx-auto px-4 py-12">
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-800 to-blue-950 text-white p-6 sm:p-8 text-center">
-            <span className="text-xs bg-amber-300 text-slate-950 px-3 py-1 rounded-full font-black uppercase">
-              Entry and ticket
-            </span>
-            <h2 className="text-2xl font-black mt-3">Submit your three screenshots</h2>
-            <p className="text-sm text-blue-100 mt-2">
-              Upload one screenshot for each page. Your ticket appears after all three are submitted.
+      <section id="entry-form" className="scroll-mt-6 border-y border-slate-200 bg-slate-50 px-4 py-14 sm:py-16">
+        <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-12">
+          <div className="lg:pt-4">
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-blue-700">Entry and ticket</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+              Ready to join?
+            </h2>
+            <p className="mt-4 max-w-lg text-sm leading-6 text-slate-600 sm:text-base">
+              Complete your details and add a screenshot for each of the three pages. Your ticket will
+              appear once your entry is submitted.
             </p>
-          </div>
 
-          {generatedTicket ? (
-            <div className="p-6 sm:p-8 text-center space-y-5">
-              <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto" />
-              <div>
-                <h3 className="text-2xl font-black text-slate-900">Ticket generated</h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  The organizer will review your proof before approving the entry. Screenshot this ticket
-                  and keep it with your three page screenshots.
-                </p>
-              </div>
-              <div className="max-w-md mx-auto rounded-2xl border-2 border-amber-400 bg-amber-50 p-6">
-                <div className="flex items-center justify-center gap-2 text-blue-900 font-black uppercase text-xs">
-                  <Ticket className="w-4 h-4" /> STL Raffle Ticket
-                </div>
-                <p className="font-mono font-black text-3xl sm:text-4xl text-blue-800 mt-3">{generatedTicket.ticket}</p>
-                <p className="text-sm font-bold text-slate-700 mt-3">{generatedTicket.agent}</p>
-                <p className="text-xs text-slate-600 mt-1">Keep this ticket screenshot as proof when claiming a prize.</p>
-              </div>
-              <button type="button" onClick={copyTicket} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700">
-                <Copy className="w-4 h-4" /> {copied ? 'Copied' : 'Copy ticket number'}
-              </button>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setGeneratedTicket(null)}
-                  className="px-5 py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5">
-              {error && (
-                <p role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
-                  {error}
-                </p>
-              )}
-              <div className="grid sm:grid-cols-2 gap-4">
-                <label className="block text-sm font-bold">
-                  Name <span className="text-red-600">*</span>
-                  <input
-                    name="agent"
-                    value={formData.agent}
-                    onChange={handleInputChange}
-                    required
-                    maxLength="100"
-                    autoComplete="name"
-                    className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal"
-                  />
-                </label>
-                <label className="block text-sm font-bold">
-                  Contact number <span className="text-red-600">*</span>
-                  <input
-                    name="contact"
-                    type="tel"
-                    value={formData.contact}
-                    onChange={handleInputChange}
-                    required
-                    maxLength="40"
-                    autoComplete="tel"
-                    className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal"
-                  />
-                </label>
-              </div>
+            <ol className="mt-7 space-y-4">
+              {[
+                'Follow each of the three pages.',
+                'Engage genuinely with their posts.',
+                'Take one screenshot per page.',
+                'Submit your details and keep your ticket screenshot.'
+              ].map((step, index) => (
+                <li key={step} className="flex items-start gap-3 text-sm font-semibold text-slate-700">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-blue-800 ring-1 ring-blue-200">
+                    {index + 1}
+                  </span>
+                  <span className="pt-1">{step}</span>
+                </li>
+              ))}
+            </ol>
 
-              <label className="block text-sm font-bold">
-                Branch or outlet (optional)
-                <input
-                  name="kiosk"
-                  value={formData.kiosk}
-                  onChange={handleInputChange}
-                  maxLength="100"
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2.5 font-normal"
-                />
-              </label>
-
-              <div className="space-y-3">
-                <h3 className="font-black text-slate-900">Required screenshot proofs</h3>
-                {PROOF_PAGES.map((page) => (
-                  <label key={page.id} className="block rounded-xl border border-slate-200 p-4">
-                    <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                      <Upload className="w-4 h-4 text-blue-700" />
-                      {page.name} screenshot <span className="text-red-600">*</span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      required
-                      onChange={(event) => handleProofChange(page.id, event.target.files?.[0])}
-                      className="mt-2 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-bold file:text-blue-800"
-                    />
-                    <span className="block text-xs text-slate-500 mt-1">
-                      {proofFiles[page.id]?.name || 'PNG, JPG, or WebP; up to 4 MB.'}
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              <label className="flex items-start gap-3 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(event) => setConsent(event.target.checked)}
-                  required
-                  className="mt-0.5"
-                />
-                <span>
-                  I agree that STL may store my name, contact number, and uploaded screenshots to
-                  administer this independent raffle and verify a claim. I understand the raffle is
-                  not sponsored or endorsed by PCSO or the linked pages.
-                </span>
-              </label>
-
-              <p className="text-xs text-slate-500">
-                Your screenshots are stored privately for the organizer. Never upload passwords,
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-blue-100 bg-white p-4 text-sm leading-6 text-slate-600">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+              <p>
+                Your screenshots are stored privately for organizer review. Never upload passwords,
                 one-time codes, or private messages.
               </p>
-              <button
-                type="submit"
-                disabled={isSubmitting || !consent}
-                className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-slate-950 font-black px-5 py-3 rounded-xl shadow-sm"
-              >
-                {isSubmitting ? 'Uploading proofs and generating ticket…' : 'Submit proofs and generate ticket'}
-              </button>
-            </form>
-          )}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                  <Ticket className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-black text-slate-950">Get your raffle ticket</h3>
+                  <p className="mt-0.5 text-sm text-slate-500">All three screenshots are required.</p>
+                </div>
+              </div>
+            </div>
+
+            {generatedTicket ? (
+              <div className="space-y-5 p-6 text-center sm:p-8">
+                <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" />
+                <div>
+                  <h3 className="text-2xl font-black text-slate-950">Ticket generated</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    The organizer will review your proof. Screenshot this ticket and keep it with your
+                    three page screenshots for your claim.
+                  </p>
+                </div>
+                <div className="mx-auto max-w-md rounded-2xl border border-blue-200 bg-blue-50/70 p-6">
+                  <div className="flex items-center justify-center gap-2 text-xs font-extrabold uppercase tracking-wide text-blue-900">
+                    <Ticket className="h-4 w-4" /> STL raffle ticket
+                  </div>
+                  <p className="mt-3 font-mono text-3xl font-black text-blue-800 sm:text-4xl">{generatedTicket.ticket}</p>
+                  <p className="mt-3 text-sm font-bold text-slate-800">{generatedTicket.agent}</p>
+                  <p className="mt-1 text-xs text-slate-600">Keep this ticket screenshot as proof when claiming a prize.</p>
+                </div>
+                <button type="button" onClick={copyTicket} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900">
+                  <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy ticket number'}
+                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedTicket(null)}
+                    className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-5 p-6 sm:p-8">
+                {error && (
+                  <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    {error}
+                  </p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-bold text-slate-800">
+                    Name <span className="text-red-600">*</span>
+                    <input
+                      name="agent"
+                      value={formData.agent}
+                      onChange={handleInputChange}
+                      required
+                      maxLength="100"
+                      autoComplete="name"
+                      className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-800">
+                    Contact number <span className="text-red-600">*</span>
+                    <input
+                      name="contact"
+                      type="tel"
+                      value={formData.contact}
+                      onChange={handleInputChange}
+                      required
+                      maxLength="40"
+                      autoComplete="tel"
+                      className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    />
+                  </label>
+                </div>
+
+                <label className="block text-sm font-bold text-slate-800">
+                  Branch or outlet <span className="font-normal text-slate-500">(optional)</span>
+                  <input
+                    name="kiosk"
+                    value={formData.kiosk}
+                    onChange={handleInputChange}
+                    maxLength="100"
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </label>
+
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900">Screenshot proofs</h4>
+                    <p className="mt-1 text-xs text-slate-500">PNG, JPG, or WebP. Maximum 4 MB each.</p>
+                  </div>
+                  {PROOF_PAGES.map((page, index) => (
+                    <label key={page.id} className="block rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200">
+                      <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-xs font-black text-blue-800 ring-1 ring-slate-200">
+                          0{index + 1}
+                        </span>
+                        {page.name} <span className="text-red-600">*</span>
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        required
+                        onChange={(event) => handleProofChange(page.id, event.target.files?.[0])}
+                        className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-800"
+                      />
+                      <span className="mt-2 block text-xs text-slate-500">
+                        {proofFiles[page.id]?.name || 'Choose a screenshot for this page.'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <label className="flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(event) => setConsent(event.target.checked)}
+                    required
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <span>
+                    I agree that STL may store my name, contact number, and uploaded screenshots to
+                    administer this independent raffle and verify a claim. I understand the raffle is
+                    not sponsored or endorsed by PCSO or the linked pages.
+                  </span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !consent}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Uploading proofs and generating ticket…' : 'Submit proofs and get my ticket'}
+                  {!isSubmitting && <ArrowRight className="h-4 w-4" />}
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </section>
 
-      <section className="max-w-3xl mx-auto px-4">
-        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-          <ShieldCheck className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <p>
-            Independent raffle organized by STL. PCSO and the linked pages are featured as promotion
-            pages only; they do not sponsor or endorse this raffle. No social account login is used.
-          </p>
-        </div>
-        <p className="text-center text-xs text-slate-500 mt-4">
-          Draw order: five 5-kg rice winners first, then one 25-kg rice winner in the final draw.
-          Keep your ticket screenshot and proof screenshots to claim.
+      <section className="mx-auto max-w-7xl px-4 pt-8">
+        <p className="text-center text-xs leading-5 text-slate-500">
+          Independent raffle organized by STL. PCSO and the linked pages are featured for promotion
+          only; they do not sponsor or endorse this raffle. No social account login is used.
         </p>
       </section>
     </div>

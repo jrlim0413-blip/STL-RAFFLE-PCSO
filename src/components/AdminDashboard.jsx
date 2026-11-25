@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Award, Download, RotateCcw, Search, Settings, Users } from 'lucide-react';
+import { readApiResponse } from '../utils/apiResponse';
 
 export default function AdminDashboard({ entries = [], stats = {}, pageSettings, adminPasscode, onUpdateSettings, onRefresh }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,8 +20,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
     let active = true;
     fetch('/api/draw', { headers: { 'x-admin-passcode': adminPasscode } })
       .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Could not load draw results.');
+        const data = await readApiResponse(response, 'Could not load draw results.');
         if (!active) return;
         setDrawResults(data.results || []);
         setNextRound(data.nextRound);
@@ -70,8 +70,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
         method: 'POST',
         headers: { 'x-admin-passcode': adminPasscode }
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not update entry status.');
+      await readApiResponse(response, 'Could not update entry status.');
       onRefresh();
     } catch (toggleError) {
       setError(toggleError.message || 'Could not update entry status.');
@@ -102,8 +101,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
           method: 'POST',
           headers: { 'x-admin-passcode': adminPasscode }
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Could not draw a winner.');
+        const data = await readApiResponse(response, 'Could not draw a winner.');
         setWinner(data);
         setSpinTicket(data.winner.ticket);
         setDrawResults(data.results);
@@ -123,10 +121,7 @@ export default function AdminDashboard({ entries = [], stats = {}, pageSettings,
       const response = await fetch('/api/export', {
         headers: { 'x-admin-passcode': adminPasscode }
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Could not export entries.');
-      }
+      if (!response.ok) await readApiResponse(response, 'Could not export entries.');
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a');
       link.href = url;
