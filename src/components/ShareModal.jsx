@@ -25,6 +25,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   const [activeTab, setActiveTab] = useState('choice'); // 'choice', 'qr', 'link'
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
+  const [copiedQrImage, setCopiedQrImage] = useState(false);
   
   // Siguraduhing laging sa LANDING PAGE (/) pupunta ang share link, hindi sa /admin
   const getLandingUrl = () => {
@@ -46,7 +47,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
   const shareDescription = 'Sumali sa opisyal na STL Community Rice Raffle! 6 Maswerteng Winners ng Bigas (5kg at 25kg). I-click ang link o i-scan ang QR code gamit ang phone camera para mag-proceed sa browser at makuha ang iyong raffle ticket!';
-  const shareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\nSumali sa raffle at makuha ang iyong ticket dito:\n👉 ${shareUrl}`;
+  const shareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\n\n👉 Pindutin ang Link para sumali:\n${shareUrl}\n\n📲 O i-scan ang QR code sa banner gamit ang camera ng cellphone!`;
 
   // QR Code generator URL (350x350 high quality, 10 margin)
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(shareUrl)}&margin=12&format=png`;
@@ -72,6 +73,25 @@ export default function ShareModal({ onClose, customUrl = '' }) {
 
   const handleCopyLink = () => copyToClipboard(shareUrl, setCopiedLink);
   const handleCopyMessage = () => copyToClipboard(shareMessage, setCopiedMessage);
+
+  const handleCopyQrImage = async () => {
+    try {
+      const response = await fetch(qrCodeUrl);
+      const blob = await response.blob();
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        setCopiedQrImage(true);
+        setTimeout(() => setCopiedQrImage(false), 2500);
+      } else {
+        handleDownloadQr();
+      }
+    } catch (err) {
+      console.error('Failed to copy QR image:', err);
+      handleDownloadQr();
+    }
+  };
 
   const handleDownloadQr = async () => {
     try {
@@ -251,11 +271,32 @@ export default function ShareModal({ onClose, customUrl = '' }) {
                   <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
                     <button
                       type="button"
+                      onClick={handleCopyQrImage}
+                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black shadow-sm transition ${
+                        copiedQrImage
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                    >
+                      {copiedQrImage ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Nakopya ang QR Image!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          Kopyahin ang QR Image (Paste sa Chat)
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleDownloadQr}
                       className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-black text-white hover:bg-blue-800 shadow-sm transition"
                     >
                       <Download className="w-4 h-4" />
-                      I-download ang QR Image (PNG)
+                      I-download ang QR (PNG)
                     </button>
                     <button
                       type="button"
@@ -418,7 +459,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
                 Live Link Preview (Lalabas pag ipinaste mo sa Facebook / Messenger):
               </span>
               <span className="text-[11px] font-bold text-slate-400">
-                May Kasamang Image &amp; Description
+                May Kasamang Litrato ng Bigas &amp; HD QR Code
               </span>
             </div>
 
