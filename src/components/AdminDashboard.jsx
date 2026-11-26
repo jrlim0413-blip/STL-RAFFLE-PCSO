@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Award, Download, RotateCcw, Search, Settings, Users } from 'lucide-react';
+import { Award, CheckCircle2, Download, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { fromManilaDateTimeInput, toManilaDateTimeInput } from '../utils/entrySchedule';
+import ShareModal from './ShareModal';
+import RaffleRoulette from './RaffleRoulette';
 
 function settingsDraft(source) {
   return {
@@ -37,6 +39,7 @@ export default function AdminDashboard({
   const [taskLink, setTaskLink] = useState('');
   const [copiedTaskId, setCopiedTaskId] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
@@ -233,7 +236,10 @@ export default function AdminDashboard({
           <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Raffle administration</p>
           <h1 className="text-3xl font-black text-slate-900">Campaign dashboard</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setShowShareModal(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-sm transition">
+            <Share2 className="w-4 h-4" /> Share & QR Code
+          </button>
           <button onClick={onRefresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border bg-white text-sm font-bold">
             <RotateCcw className="w-4 h-4" /> Refresh
           </button>
@@ -399,46 +405,56 @@ export default function AdminDashboard({
             </ul>
           </div>
         )}
-        <p className="mt-4 text-xs leading-5 text-slate-500">
-          Task counts are shown in the entry list for review; they do not automatically change an entry’s eligibility.
+        <p className="mt-4 text-xs leading-5 text-emerald-800 font-bold flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>Nakadepende ang eligibility sa engagement task: Kapag natapos at na-verify ang task ng kalahok, saka pa lamang sila magiging 'Eligible' at masasama sa raffle draw.</span>
         </p>
       </section>
 
-      <section id="raffle-draw" className="bg-amber-100 border border-amber-300 rounded-2xl p-6 text-center">
-        <h2 className="text-xl font-black">Six-winner raffle draw</h2>
-        <p className="text-sm text-slate-700 mt-1">
-          {nextRound ? `Draw ${nextRound} of 6: ${nextPrize}` : 'All six prizes have been drawn.'}
-        </p>
-        <p className="font-mono text-3xl font-black text-blue-800 my-4">{spinTicket}</p>
-        {winner && (
-          <p className="text-sm font-bold text-emerald-800 mb-4">
-            Draw {winner.round}: {winner.winner.agent} · {winner.winner.contact} · {winner.prize}
-          </p>
-        )}
-        <button onClick={runRaffleDraw} disabled={isSpinning || !nextRound} className="rounded-lg bg-slate-900 text-white px-5 py-3 font-bold disabled:opacity-50">
-          {isSpinning ? 'Drawing…' : nextRound ? `Draw #${nextRound} - ${nextPrize}` : 'Draw complete'}
-        </button>
-        {drawResults.length > 0 && (
-          <ol className="max-w-lg mx-auto mt-5 text-left space-y-2">
-            {drawResults.map((result) => (
-              <li key={result.round} className="bg-white/70 rounded-lg px-3 py-2 text-sm">
-                <strong>Draw {result.round} - {result.prize}:</strong> {result.winner.agent} ({result.winner.ticket})
-              </li>
-            ))}
-          </ol>
-        )}
+      {/* PCSO-Style Lotto Tambiolo & Roulette Wheel Section */}
+      <section id="raffle-draw">
+        <RaffleRoulette
+          entries={entries}
+          nextRound={nextRound}
+          nextPrize={nextPrize}
+          drawResults={drawResults}
+          adminPasscode={adminPasscode}
+          onDrawComplete={(winnerData) => {
+            setWinner(winnerData);
+            setDrawResults(winnerData.results || []);
+            setNextRound(winnerData.nextRound);
+            setNextPrize(winnerData.nextPrize);
+            onRefresh();
+          }}
+          onError={(err) => setError(err)}
+        />
       </section>
 
       <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="p-5 flex flex-wrap items-center justify-between gap-3 border-b">
           <div>
-            <h2 className="font-black text-lg">Entry list</h2>
-            <p className="text-sm text-slate-500">Review entries and mark eligibility before the draw.</p>
+            <h2 className="font-black text-lg flex items-center gap-2">
+              Entry list
+              <span className="text-xs bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-full border border-blue-300">
+                Auto-Detection
+              </span>
+            </h2>
+            <p className="text-sm text-slate-500">Awtomatikong sinusuri kung eligible ang kalahok batay sa pagkumpleto ng lahat ng takdang gawain (tasks).</p>
           </div>
-          <label className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search entries" className="border rounded-lg pl-9 pr-3 py-2 text-sm" />
-          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition"
+              title="I-refresh ang eligibility ng mga kalahok"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Sync Status
+            </button>
+            <label className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search entries" className="border rounded-lg pl-9 pr-3 py-2 text-sm" />
+            </label>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -451,37 +467,106 @@ export default function AdminDashboard({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredEntries.length ? filteredEntries.map((entry) => (
-                <tr key={entry.ticket}>
-                  <td className="p-3 font-mono font-bold text-blue-700">{entry.ticket}</td>
-                  <td className="p-3">{entry.agent}</td>
-                  <td className="p-3">{entry.contact}</td>
-                  <td className="p-3">{entry.agentUsername || '—'}</td>
-                  <td className="p-3">{entry.supervisorName || '—'}</td>
-                  <td className="p-3">
-                    <div className="flex flex-wrap gap-2">
-                      {[...(entry.proofs || []), ...(entry.engagementProofs || [])].map((proof) => (
-                        <button
-                          key={proof.filename}
-                          type="button"
-                          onClick={() => viewProof(proof)}
-                          className="text-blue-700 font-bold hover:underline"
-                        >
-                          {proof.pageKey}
-                        </button>
-                      ))}
-                      {!entry.proofs?.length && !entry.engagementProofs?.length && '—'}
-                    </div>
-                  </td>
-                  <td className="p-3 font-semibold">{entry.tasksCompleted ?? 0}/{entry.totalTasks ?? 0}</td>
-                  <td className="p-3">{entry.status}</td>
-                  <td className="p-3">
-                    <button onClick={() => toggleStatus(entry.ticket)} className="text-blue-700 font-bold hover:underline">
-                      {entry.status === 'Eligible' ? 'Mark for review' : 'Mark eligible'}
-                    </button>
-                  </td>
-                </tr>
-              )) : (
+              {filteredEntries.length ? filteredEntries.map((entry) => {
+                const totalTasks = entry.totalTasks ?? 0;
+                const tasksCompleted = entry.tasksCompleted ?? 0;
+                const isAllTasksDone = totalTasks > 0 && tasksCompleted >= totalTasks;
+                const isPendingTasks = totalTasks > 0 && tasksCompleted < totalTasks;
+
+                return (
+                  <tr key={entry.ticket}>
+                    <td className="p-3">
+                      <span className="font-mono font-bold text-blue-700 block">{entry.ticket}</span>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Huling 6: <strong className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded">{entry.ticket.slice(-6)}</strong>
+                      </span>
+                    </td>
+                    <td className="p-3">{entry.agent}</td>
+                    <td className="p-3">{entry.contact}</td>
+                    <td className="p-3">{entry.agentUsername || '—'}</td>
+                    <td className="p-3">{entry.supervisorName || '—'}</td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-2">
+                        {[...(entry.proofs || []), ...(entry.engagementProofs || [])].map((proof) => (
+                          <button
+                            key={proof.filename}
+                            type="button"
+                            onClick={() => viewProof(proof)}
+                            className="text-blue-700 font-bold hover:underline"
+                          >
+                            {proof.pageKey}
+                          </button>
+                        ))}
+                        {!entry.proofs?.length && !entry.engagementProofs?.length && '—'}
+                      </div>
+                    </td>
+                    <td className="p-3 font-semibold">{tasksCompleted}/{totalTasks}</td>
+                    <td className="p-3">
+                      {isAllTasksDone ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Eligible
+                        </span>
+                      ) : isPendingTasks ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm">
+                          Kulang sa Task ({tasksCompleted}/{totalTasks})
+                        </span>
+                      ) : entry.status === 'Eligible' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
+                          Eligible
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
+                          Pending Review
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      {isAllTasksDone ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Kumpleto ({tasksCompleted}/{totalTasks})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(entry.ticket)}
+                            className="block text-[11px] text-slate-500 hover:text-slate-800 underline"
+                            title="I-manual override ang status kung kailangan"
+                          >
+                            Manual Override
+                          </button>
+                        </div>
+                      ) : isPendingTasks ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700">
+                            Di pa Tapos ang Lahat ng Task
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(entry.ticket)}
+                            className="block text-[11px] text-blue-700 font-semibold hover:underline"
+                          >
+                            {entry.status === 'Eligible' ? 'Mark for review' : 'Force eligible'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
+                            {entry.status === 'Eligible' ? 'Kwalipikado' : 'For Review'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(entry.ticket)}
+                            className="block text-[11px] text-blue-700 font-semibold hover:underline"
+                          >
+                            {entry.status === 'Eligible' ? 'Mark for review' : 'Force eligible'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr><td className="p-6 text-center text-slate-500" colSpan="9">No entries found.</td></tr>
               )}
             </tbody>
@@ -506,6 +591,8 @@ export default function AdminDashboard({
           </div>
         </div>
       )}
+
+      {showShareModal && <ShareModal onClose={() => setShowShareModal(false)} />}
     </div>
   );
 }

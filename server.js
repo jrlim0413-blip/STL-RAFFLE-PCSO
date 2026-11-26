@@ -40,6 +40,16 @@ const IMAGE_TYPES = {
 const PROOF_MIME_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
 
 app.use(cors());
+
+if (process.env.VERCEL) {
+  app.use((req, res, next) => {
+    if (req.url && !req.url.startsWith('/api')) {
+      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+    }
+    next();
+  });
+}
+
 app.post(
   '/api/proofs/upload',
   express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '4mb' }),
@@ -410,10 +420,40 @@ app.post('/api/tasks/:taskId/complete', asyncRoute(async (req, res) => {
     task.id,
     body.proof.filename
   );
+
+  // Auto-detect: Kwalipikado LAMANG kung natapos ang LAHAT ng takdang tasks
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  const activeTaskIds = new Set(
+    (Array.isArray(settings.engagementTasks) ? settings.engagementTasks : []).map((t) => t.id)
+  );
+  const allCompletions = await listTaskCompletions();
+  const ticketCompletions = allCompletions.filter(
+    (c) => c.ticket === resolved.entry.ticket && activeTaskIds.has(c.taskId)
+  );
+  const totalTasks = activeTaskIds.size;
+  const completedCount = ticketCompletions.length;
+  const isFullyComplete = totalTasks > 0 ? completedCount >= totalTasks : true;
+
+  try {
+    if (isFullyComplete && resolved.entry.status !== 'Eligible') {
+      await toggleEntry(resolved.entry.ticket);
+    } else if (!isFullyComplete && totalTasks > 0 && resolved.entry.status === 'Eligible') {
+      // Kung kulang pa ang tasks pero naka-eligible, ibalik sa Review para hindi ma-draw nang maaga
+      await toggleEntry(resolved.entry.ticket);
+    }
+  } catch (syncError) {
+    console.warn('Could not update entry status on task completion:', syncError);
+  }
+
   res.status(201).json({
     success: true,
     completedAt: completion.completedAt,
-    message: 'Engagement task proof submitted.'
+    tasksCompleted: completedCount,
+    totalTasks,
+    isEligible: isFullyComplete,
+    message: isFullyComplete
+      ? 'Kumpleto na ang lahat ng engagement tasks! Kwalipikado ka na sa raffle draw.'
+      : `Na-submit ang proof para sa ${task.id}. Kumpletuhin pa ang ibang gawain (${completedCount}/${totalTasks}) para maging kwalipikado.`
   });
 }));
 
@@ -437,19 +477,29 @@ app.get('/api/entries', requireAdmin, asyncRoute(async (req, res) => {
   }
   const entriesWithTaskCounts = entries.map((entry) => {
     const entryCompletions = completionsByTicket.get(entry.ticket) || [];
+    // Strict auto-detection: Kwalipikado LAMANG kung nakumpleto ang LAHAT ng active tasks
+    const isCompleted = totalTasks > 0 ? entryCompletions.length >= totalTasks : entry.status === 'Eligible';
+    let effectiveStatus;
+    if (totalTasks > 0) {
+      effectiveStatus = isCompleted ? 'Eligible' : 'Review';
+    } else {
+      effectiveStatus = entry.status;
+    }
     return {
       ...entry,
+      status: effectiveStatus,
       tasksCompleted: entryCompletions.length,
       totalTasks,
+      isFullyComplete: isCompleted,
       engagementProofs: entryCompletions.map((completion) => ({
         filename: completion.proofFilename,
         pageKey: `${completion.taskId} engagement`
       }))
     };
   });
-  const eligible = entries.filter((entry) => entry.status === 'Eligible').length;
-  const flagged = entries.length - eligible;
-  const activeAgents = new Set(entries.map((entry) => entry.agentUsername).filter(Boolean)).size;
+  const eligible = entriesWithTaskCounts.filter((entry) => entry.status === 'Eligible').length;
+  const flagged = entriesWithTaskCounts.length - eligible;
+  const activeAgents = new Set(entriesWithTaskCounts.map((entry) => entry.agentUsername).filter(Boolean)).size;
 
   res.json({
     success: true,
@@ -627,7 +677,22 @@ app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {
 const distPath = path.join(__dirname, 'dist');
 if (!process.env.VERCEL && fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  app.get('*', (req, res) => {
+    const indexPath = path.join(distPath, 'index.html');
+    if (!fs.existsSync(indexPath)) return res.status(404).send('Not found');
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const fullOrigin = `${protocol}://${host}`;
+    try {
+      let html = fs.readFileSync(indexPath, 'utf-8');
+      html = html.replace(/https:\/\/stl-raffle-pcso\.vercel\.app/g, fullOrigin);
+      html = html.replace(/content="\/images\/share-preview\.(jpg|png)"/g, `content="${fullOrigin}/images/share-preview.jpg"`);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    } catch {
+      res.sendFile(indexPath);
+    }
+  });
 }
 
 app.use((error, req, res, next) => {

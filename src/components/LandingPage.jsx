@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, ShieldCheck, Ticket, Upload, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, ShieldCheck, Sparkles, Ticket, Upload, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { formatManilaDateTime, getCountdownParts, getEntrySchedule } from '../utils/entrySchedule';
 import { SUPERVISOR_NAMES } from '../utils/supervisors';
@@ -280,10 +280,10 @@ export default function LandingPage({ pageSettings }) {
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-blue-700">Simple to join</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-              Your ticket starts with three pages
+              Paano Sumali at Mapabilang sa Raffle
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
-              Follow each page, engage with its posts, and upload one screenshot per page as proof.
+              I-follow ang 3 opisyal na pages, mag-engage (react, comment, share) sa task link na ipinapadala sa inyong Group Chat (GC), at mag-upload ng proof para maging kwalipikado sa raffle draw.
             </p>
           </div>
 
@@ -321,6 +321,38 @@ export default function LandingPage({ pageSettings }) {
               </article>
             ))}
           </div>
+
+          {/* Group Chat Engagement Task Highlight Card */}
+          <div className="mt-8 overflow-hidden rounded-3xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-yellow-50 to-blue-50 p-6 sm:p-8 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="max-w-3xl space-y-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400 bg-amber-200/90 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-amber-950">
+                  <Sparkles className="h-3.5 w-3.5 text-amber-800" />
+                  Kailangan sa Pagsali (GC Task)
+                </span>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-950">
+                  Mag-React, Comment, at Share sa Task Link na Ise-send sa Inyong GC!
+                </h3>
+                <p className="text-sm leading-relaxed text-slate-700 font-medium">
+                  Upang magkaroon ng tsansang <strong>mapabilang at mabunot sa raffle draw</strong>, kailangan ninyong kumpletuhin ang ipinapadalang task: <strong>i-React, mag-Comment, at i-Share</strong> ang link na ipapadala ng inyong supervisor sa inyong <strong>Group Chat (GC)</strong>. Kapag nakumpleto ang task at na-verify ang inyong proof, opisyal na kayong kasali sa draw para sa 5kg at 25kg na bigas!
+                </p>
+                <div className="pt-2 flex flex-wrap gap-2 text-xs font-bold text-slate-800">
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
+                    👍 React sa Post
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
+                    💬 Mag-comment ng Suporta
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
+                    🔄 I-share ang Post
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-100 text-emerald-950 px-3.5 py-2 border border-emerald-300 shadow-sm font-black">
+                    🎟️ Kwalipikado sa Raffle Draw
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -339,9 +371,9 @@ export default function LandingPage({ pageSettings }) {
             <ol className="mt-7 space-y-4">
               {[
                 'Follow each of the three pages.',
-                'Engage genuinely with their posts.',
-                'Take one screenshot per page.',
-                'Submit your details and keep your ticket screenshot.'
+                'Engage, mag-react, comment, at share sa task link na ise-send sa inyong GC.',
+                'Take one screenshot per page at task bilang patunay.',
+                'Submit your details, kumpletuhin ang task, at mapabilang sa raffle draw.'
               ].map((step, index) => (
                 <li key={step} className="flex items-start gap-3 text-sm font-semibold text-slate-700">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-blue-800 ring-1 ring-blue-200">

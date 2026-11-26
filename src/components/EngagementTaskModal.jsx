@@ -13,6 +13,7 @@ export default function EngagementTaskModal({ taskId, onClose }) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
   const [copiedComment, setCopiedComment] = useState(false);
   const [verifiedReference, setVerifiedReference] = useState('');
   const [error, setError] = useState('');
@@ -86,7 +87,8 @@ export default function EngagementTaskModal({ taskId, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference: reference.trim(), proof })
       });
-      await readApiResponse(completionResponse, 'Could not submit your task proof.');
+      const result = await readApiResponse(completionResponse, 'Could not submit your task proof.');
+      setSubmissionResult(result);
       setSubmitted(true);
       setProofFile(null);
     } catch (submitError) {
@@ -200,7 +202,9 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                     <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
                       <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" />
                       <p className="mt-2 font-bold text-emerald-900">Proof submitted successfully.</p>
-                      <p className="mt-1 text-sm text-emerald-800">Your task completion is now recorded for review.</p>
+                      <p className="mt-1 text-sm text-emerald-800">
+                        {submissionResult?.message || 'Naitala ang iyong submission. Siguraduhing makumpleto ang lahat ng daily tasks para maging kwalipikado sa raffle.'}
+                      </p>
                     </div>
                   ) : (
                     <form onSubmit={handleSubmit} className="space-y-4">
