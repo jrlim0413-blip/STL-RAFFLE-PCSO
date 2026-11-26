@@ -130,11 +130,20 @@ export default function EngagementTaskModal({ taskId, onClose }) {
               {task.instruction && <p className="text-sm leading-6 text-slate-700">{task.instruction}</p>}
               {!verifiedReference ? (
                 <form onSubmit={verifyReference} className="space-y-4">
+                  <div className="rounded-2xl border-2 border-blue-200 bg-blue-50/80 p-4 text-xs text-blue-950 space-y-1.5 shadow-sm">
+                    <p className="font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                      📌 Paalala Bago Mag-Engage:
+                    </p>
+                    <p className="leading-relaxed font-medium">
+                      Kailangang <strong>i-input muna ang inyong Ticket Number</strong> (na nakuha ninyo matapos i-follow at i-upload ang 3 opisyal na pages) bago magbukas ang post link para mai-record ang inyong engagement task proof.
+                    </p>
+                  </div>
+
                   <label className="block text-sm font-bold text-slate-800">
-                    Ticket number or agent username
+                    Ticket Number o Agent Username
                     <span className="ml-1 text-red-600">*</span>
                     <span className="mt-1 block text-xs font-normal text-slate-500">
-                      Use your unique ticket number if your agent username is shared.
+                      I-type ang inyong opisyal na Ticket Number (halimbawa: STL-20261125-123456).
                     </span>
                     <input
                       value={reference}
@@ -142,8 +151,8 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                       required
                       maxLength="120"
                       autoComplete="off"
-                      placeholder="STL-20261125-123456 or your username"
-                      className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 font-normal outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      placeholder="STL-20261125-123456 o inyong username"
+                      className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 font-normal outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 font-mono text-sm"
                     />
                   </label>
                   {error && (
@@ -154,9 +163,9 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                   <button
                     type="submit"
                     disabled={isVerifying}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
                   >
-                    {isVerifying ? 'Verifying…' : 'Verify ticket or username'}
+                    {isVerifying ? 'Kasalukuyang Vine-verify…' : 'I-verify ang Ticket Number Bago Mag-Engage'}
                   </button>
                 </form>
               ) : (

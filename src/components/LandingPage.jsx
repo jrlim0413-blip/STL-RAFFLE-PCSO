@@ -283,7 +283,7 @@ export default function LandingPage({ pageSettings }) {
               Paano Sumali at Mapabilang sa Raffle
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
-              I-follow ang 3 opisyal na pages, mag-engage (react, comment, share) sa task link na ipinapadala sa inyong Group Chat (GC), at mag-upload ng proof para maging kwalipikado sa raffle draw.
+              I-follow ang 3 opisyal na pages at i-upload ang screenshot proof sa form sa ibaba para maka-generate ng inyong <strong>Ticket Number</strong>. Pagkatapos, sa bawat engagement task (react, comment, share) na ipapadala sa inyong <strong>Group Chat (GC)</strong>, kailangang <strong>i-input muna ang inyong Ticket Number bago mag-engage</strong> at mag-upload ng task proof para maging kwalipikado sa raffle draw.
             </p>
           </div>
 
@@ -334,17 +334,17 @@ export default function LandingPage({ pageSettings }) {
                   Mag-React, Comment, at Share sa Task Link na Ise-send sa Inyong GC!
                 </h3>
                 <p className="text-sm leading-relaxed text-slate-700 font-medium">
-                  Upang magkaroon ng tsansang <strong>mapabilang at mabunot sa raffle draw</strong>, kailangan ninyong kumpletuhin ang ipinapadalang task: <strong>i-React, mag-Comment, at i-Share</strong> ang link na ipapadala ng inyong supervisor sa inyong <strong>Group Chat (GC)</strong>. Kapag nakumpleto ang task at na-verify ang inyong proof, opisyal na kayong kasali sa draw para sa 5kg at 25kg na bigas!
+                  Matapos i-follow ang 3 opisyal na pages at i-upload ang inyong screenshots sa form sa ibaba para maka-generate ng inyong <strong>Ticket Number</strong>, kailangan ninyong <strong>i-input muna ang inyong Ticket Number tuwing may ipapadalang task link sa inyong Group Chat (GC)</strong> bago mag-engage (react, comment, share). Kapag nakumpleto ang task at na-verify ang inyong proof, opisyal na kayong kwalipikado sa draw para sa 5kg at 25kg na bigas!
                 </p>
                 <div className="pt-2 flex flex-wrap gap-2 text-xs font-bold text-slate-800">
-                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
-                    👍 React sa Post
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-blue-100 text-blue-950 px-3.5 py-2 border border-blue-300 shadow-sm font-black">
+                    1️⃣ Follow 3 Pages &amp; Upload
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
-                    💬 Mag-comment ng Suporta
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 text-amber-950 px-3.5 py-2 border border-amber-300 shadow-sm font-black">
+                    2️⃣ Generate Ticket Number
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 border border-slate-200 shadow-sm">
-                    🔄 I-share ang Post
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-100 text-indigo-950 px-3.5 py-2 border border-indigo-300 shadow-sm font-black">
+                    3️⃣ Input Ticket Number sa GC Task
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-100 text-emerald-950 px-3.5 py-2 border border-emerald-300 shadow-sm font-black">
                     🎟️ Kwalipikado sa Raffle Draw
@@ -364,16 +364,15 @@ export default function LandingPage({ pageSettings }) {
               Ready to join?
             </h2>
             <p className="mt-4 max-w-lg text-sm leading-6 text-slate-600 sm:text-base">
-              Complete your details and add a screenshot for each of the three pages. Your ticket will
-              appear once your entry is submitted.
+              I-fill out ang inyong details at mag-upload ng screenshot proof para sa bawat isa sa 3 opisyal na pages para awtomatikong lumabas ang inyong opisyal na Ticket Number.
             </p>
 
             <ol className="mt-7 space-y-4">
               {[
-                'Follow each of the three pages.',
-                'Engage, mag-react, comment, at share sa task link na ise-send sa inyong GC.',
-                'Take one screenshot per page at task bilang patunay.',
-                'Submit your details, kumpletuhin ang task, at mapabilang sa raffle draw.'
+                'I-follow ang 3 opisyal na pages sa itaas at kumuha ng tig-isang screenshot proof.',
+                'I-upload ang screenshots sa form sa kanan para maka-generate ng inyong Ticket Number.',
+                'I-screenshot o kopyahin at itabi ang inyong Ticket Number para sa verification at claim.',
+                'Sa bawat engagement task link sa inyong GC: I-input muna ang Ticket Number bago mag-engage (react, comment, share) at mag-upload ng task proof para maging kwalipikado sa raffle draw!'
               ].map((step, index) => (
                 <li key={step} className="flex items-start gap-3 text-sm font-semibold text-slate-700">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-blue-800 ring-1 ring-blue-200">
@@ -447,6 +446,15 @@ export default function LandingPage({ pageSettings }) {
                       Save this ticket screenshot as proof when claiming a prize.
                     </p>
                   </div>
+                </div>
+                <div className="mx-auto max-w-md rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-left shadow-sm">
+                  <p className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-700" />
+                    Paalala sa GC Engagement Task:
+                  </p>
+                  <p className="mt-1.5 text-xs text-slate-700 font-medium leading-relaxed">
+                    I-save o i-screenshot ang inyong Ticket Number! Tuwing may ipapadalang engagement task link sa inyong <strong>Group Chat (GC)</strong>, <strong>kailangan ninyong i-input ang Ticket Number na ito bago mag-engage</strong> (react, comment, share) at mag-upload ng task proof para opisyal kayong mapabilang sa raffle draw!
+                  </p>
                 </div>
                 <button type="button" onClick={copyTicket} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900">
                   <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy ticket number'}
