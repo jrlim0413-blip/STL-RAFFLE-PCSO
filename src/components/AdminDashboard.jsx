@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Award, CheckCircle2, Download, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Users } from 'lucide-react';
+import { Award, Check, CheckCircle2, Copy, Download, ExternalLink, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { fromManilaDateTimeInput, toManilaDateTimeInput } from '../utils/entrySchedule';
 import ShareModal from './ShareModal';
@@ -38,6 +38,9 @@ export default function AdminDashboard({
   const [suggestedComment, setSuggestedComment] = useState('');
   const [taskLink, setTaskLink] = useState('');
   const [copiedTaskId, setCopiedTaskId] = useState('');
+  const [copiedTaskMsgId, setCopiedTaskMsgId] = useState('');
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [copiedShareMessage, setCopiedShareMessage] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -117,7 +120,7 @@ export default function AdminDashboard({
       const data = await readApiResponse(response, 'Could not create engagement task.');
       setSettings(settingsDraft(data.settings));
       onSettingsChange(data.settings);
-      setTaskLink(`${window.location.origin}/?task=${encodeURIComponent(data.task.id)}`);
+      setTaskLink(`${getPublicBaseUrl()}/?task=${encodeURIComponent(data.task.id)}`);
       setTaskPostUrl('');
       setTaskInstruction('');
       setSuggestedComment('');
@@ -128,15 +131,64 @@ export default function AdminDashboard({
     }
   };
 
+  const getPublicBaseUrl = () => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'https://stl-raffle-campaign.vercel.app';
+      }
+      return window.location.origin;
+    }
+    return 'https://stl-raffle-campaign.vercel.app';
+  };
+
+  const copyToClipboard = async (text, setSuccess) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      if (typeof setSuccess === 'function') {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 2500);
+      }
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const officialShareUrl = `${getPublicBaseUrl()}/?ref=share`;
+  const officialShareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\n\n👉 Pindutin ang Link para sumali at makuha ang iyong ticket:\n${officialShareUrl}\n\n📲 O i-scan ang QR code sa banner gamit ang camera ng cellphone!`;
+
   const copyTaskLink = async (taskId) => {
     setError('');
     try {
-      const link = `${window.location.origin}/?task=${encodeURIComponent(taskId)}`;
-      await navigator.clipboard.writeText(link);
-      setCopiedTaskId(taskId);
-      setTimeout(() => setCopiedTaskId(''), 2000);
+      const link = `${getPublicBaseUrl()}/?task=${encodeURIComponent(taskId)}`;
+      await copyToClipboard(link, () => {
+        setCopiedTaskId(taskId);
+        setTimeout(() => setCopiedTaskId(''), 2000);
+      });
     } catch (copyError) {
       setError(copyError.message || 'Could not copy the engagement task link.');
+    }
+  };
+
+  const copyTaskMessage = async (task) => {
+    setError('');
+    try {
+      const link = `${getPublicBaseUrl()}/?task=${encodeURIComponent(task.id)}`;
+      const msg = `🎯 BAGONG ENGAGEMENT TASK!\n\n📌 Paano gawin:\n1. I-click ang link: ${link}\n2. I-input ang iyong Ticket Number bago mag-engage.\n3. Sundin ang tagubilin at i-upload ang screenshot proof para sa karagdagang tsansa sa raffle!${task.instruction ? `\n\n📝 Paalala: ${task.instruction}` : ''}`;
+      await copyToClipboard(msg, () => {
+        setCopiedTaskMsgId(task.id);
+        setTimeout(() => setCopiedTaskMsgId(''), 2500);
+      });
+    } catch (copyError) {
+      setError(copyError.message || 'Could not copy the task message.');
     }
   };
 
@@ -248,6 +300,113 @@ export default function AdminDashboard({
           </button>
         </div>
       </div>
+
+      {/* OPISYAL NA SHARE CARD PARA SA MESSENGER / FACEBOOK / GC */}
+      <section className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 text-white rounded-2xl p-5 sm:p-6 shadow-xl border border-emerald-500/30">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black uppercase tracking-wider border border-emerald-400/30">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Opisyal na Share Link &amp; Messenger Post
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-white">
+              Ready-to-Paste sa Messenger &amp; Group Chat
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
+              I-copy ang opisyal na link o ang kumpletong mensahe para siguradong mag-appear ang litrato ng bigas at raffle banner pagka-paste sa Messenger.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowShareModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold border border-slate-700 shadow-sm transition"
+            >
+              <QrCode className="w-4 h-4 text-emerald-400" />
+              Buksan ang QR Modal
+            </button>
+            <a
+              href={`https://developers.facebook.com/tools/debug/?q=${encodeURIComponent(officialShareUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 text-xs font-bold border border-blue-500/40 transition"
+              title="I-refresh ang cache ng Facebook kung sakaling hindi agad lumabas ang litrato"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              I-refresh FB Cache
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+
+        {/* Link and Action Buttons */}
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="md:col-span-6 bg-slate-950/70 border border-slate-700/60 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 shrink-0">Link:</span>
+            <input
+              type="text"
+              readOnly
+              value={officialShareUrl}
+              className="w-full bg-transparent text-xs sm:text-sm font-mono text-emerald-200 font-semibold focus:outline-none select-all"
+            />
+          </div>
+
+          <div className="md:col-span-6 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => copyToClipboard(officialShareUrl, setCopiedShareLink)}
+              className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black shadow-md transition ${
+                copiedShareLink
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              }`}
+            >
+              {copiedShareLink ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Nakopya ang Link!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Kopyahin ang Link
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => copyToClipboard(officialShareMessage, setCopiedShareMessage)}
+              className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black shadow-md transition ${
+                copiedShareMessage
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+              }`}
+            >
+              {copiedShareMessage ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Nakopya ang Mensahe!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Kopyahin ang Mensahe (Pang-GC)
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Tip Box */}
+        <div className="mt-4 p-3 rounded-xl bg-slate-800/80 border border-slate-700/70 text-xs text-slate-300 flex items-start gap-2.5">
+          <span className="text-base leading-none">💡</span>
+          <div className="leading-relaxed">
+            <strong className="text-amber-300">Tip sa Messenger:</strong> Pagka-paste ng link sa chat box, <strong>maghintay ng 1 hanggang 2 segundo</strong> bago pindutin ang Send upang kusang lumitaw ang litrato ng Bigas at Official Banner! Kung hindi agad lumitaw dahil sa lumang cache ng Facebook, i-click lamang ang <em>&quot;I-refresh FB Cache&quot;</em> sa itaas at pindutin ang <strong>&quot;Scrape Again&quot;</strong>.
+          </div>
+        </div>
+      </section>
 
       {error && (
         <p role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
@@ -370,13 +529,26 @@ export default function AdminDashboard({
             <a href={taskLink} target="_blank" rel="noreferrer" className="min-w-0 flex-1 break-all text-sm font-semibold text-emerald-900 underline">
               {taskLink}
             </a>
-            <button
-              type="button"
-              onClick={() => copyTaskLink(new URL(taskLink).searchParams.get('task'))}
-              className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white"
-            >
-              Copy Link
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => copyTaskLink(new URL(taskLink).searchParams.get('task'))}
+                className="shrink-0 rounded-lg bg-emerald-700 hover:bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition"
+              >
+                Copy Link
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const taskId = new URL(taskLink).searchParams.get('task');
+                  const msg = `🎯 BAGONG ENGAGEMENT TASK!\n\n📌 Paano gawin:\n1. I-click ang link: ${taskLink}\n2. I-input ang iyong Ticket Number bago mag-engage.\n3. Sundin ang tagubilin at i-upload ang screenshot proof para sa raffle!`;
+                  copyToClipboard(msg);
+                }}
+                className="shrink-0 rounded-lg bg-amber-500 hover:bg-amber-600 px-3 py-2 text-xs font-black text-slate-950 transition"
+              >
+                Copy Mensahe (GC)
+              </button>
+            </div>
           </div>
         )}
         {Array.isArray(settings.engagementTasks) && settings.engagementTasks.length > 0 && (
@@ -393,13 +565,42 @@ export default function AdminDashboard({
                     {task.instruction && <p className="mt-2 text-xs text-slate-600">Instruction: {task.instruction}</p>}
                     {task.suggestedComment && <p className="mt-1 text-xs text-slate-600">Suggested comment: {task.suggestedComment}</p>}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => copyTaskLink(task.id)}
-                    className="shrink-0 rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-50"
-                  >
-                    {copiedTaskId === task.id ? 'Copied' : 'Copy Link'}
-                  </button>
+                  <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => copyTaskLink(task.id)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50 transition"
+                    >
+                      {copiedTaskId === task.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Nakopya ang Link</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Kopyahin ang Link</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyTaskMessage(task)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 text-xs font-black shadow-sm transition"
+                    >
+                      {copiedTaskMsgId === task.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Nakopya ang Mensahe</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Kopyahin Mensahe (GC)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

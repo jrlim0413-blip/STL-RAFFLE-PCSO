@@ -115,8 +115,8 @@ export default function ShareModal({ onClose, customUrl = '' }) {
     if (isMobile) {
       window.location.href = `fb-messenger://share/?link=${encodeURIComponent(shareUrl)}`;
     } else {
-      const sendUrl = `https://www.facebook.com/dialog/send?link=${encodeURIComponent(shareUrl)}&app_id=1683164939840104&redirect_uri=${encodeURIComponent(shareUrl)}`;
-      window.open(sendUrl, '_blank', 'width=650,height=600');
+      const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+      window.open(fbUrl, '_blank', 'width=650,height=600');
     }
   };
 
