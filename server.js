@@ -146,14 +146,18 @@ function getFacebookPostUrl(value) {
   }
 }
 
-async function resolveTaskEntry(reference) {
+async function resolveTaskEntry(reference, ticketOnly = false) {
   if (typeof reference !== 'string' || !reference.trim()) {
-    return { error: { status: 400, message: 'Enter your raffle ticket number or agent username.' } };
+    return { error: { status: 400, message: ticketOnly ? 'Ilagay ang inyong opisyal na Ticket Number.' : 'Enter your raffle ticket number or agent username.' } };
   }
   const normalizedReference = reference.trim().toLowerCase();
   const entries = await listEntries();
   const ticketMatch = entries.find((entry) => entry.ticket.toLowerCase() === normalizedReference);
   if (ticketMatch) return { entry: ticketMatch };
+
+  if (ticketOnly || normalizedReference.startsWith('stl-')) {
+    return { error: { status: 404, message: 'Hindi natagpuan ang Ticket Number na ito. Siguraduhing tama ang inilagay na Ticket Number (hal. STL-20261125-123456).' } };
+  }
 
   const usernameMatches = entries.filter(
     (entry) => entry.agentUsername?.toLowerCase() === normalizedReference
@@ -386,14 +390,15 @@ app.post('/api/tasks', requireAdmin, asyncRoute(async (req, res) => {
 app.post('/api/tasks/:taskId/verify', asyncRoute(async (req, res) => {
   const task = await findEngagementTask(req.params.taskId);
   if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
-  const resolved = await resolveTaskEntry(req.body?.reference);
+  const ticketOnly = req.body?.ticketOnly === true;
+  const resolved = await resolveTaskEntry(req.body?.reference, ticketOnly);
   if (resolved.error) {
     return res.status(resolved.error.status).json({ success: false, error: resolved.error.message });
   }
   if (await getTaskCompletion(resolved.entry.ticket, task.id)) {
     return res.status(409).json({ success: false, error: 'This engagement task has already been submitted for this ticket.' });
   }
-  res.json({ success: true, message: 'Ticket or agent username verified.' });
+  res.json({ success: true, message: 'Ticket verified successfully.' });
 }));
 
 app.post('/api/tasks/:taskId/complete', asyncRoute(async (req, res) => {
@@ -401,7 +406,8 @@ app.post('/api/tasks/:taskId/complete', asyncRoute(async (req, res) => {
   if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
 
   const body = req.body || {};
-  const resolved = await resolveTaskEntry(body.reference);
+  const ticketOnly = body.ticketOnly === true;
+  const resolved = await resolveTaskEntry(body.reference, ticketOnly);
   if (resolved.error) {
     return res.status(resolved.error.status).json({ success: false, error: resolved.error.message });
   }

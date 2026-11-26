@@ -37,17 +37,25 @@ export default function EngagementTaskModal({ taskId, onClose }) {
   const verifyReference = async (event) => {
     event.preventDefault();
     setError('');
+    const cleanTicket = reference.trim().toUpperCase();
+
+    // STRICT CHECK: Dapat Ticket Number (STL-...) lamang! Hindi dapat mag-proceed kung hindi ticket number.
+    if (!cleanTicket.startsWith('STL-')) {
+      setError('Maling Ticket Number! Tanging opisyal na Ticket Number (halimbawa: STL-20261125-123456) lamang ang tinatanggap. Hindi maaaring mag-proceed kung hindi Ticket Number.');
+      return;
+    }
+
     setIsVerifying(true);
     try {
       const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference: reference.trim() })
+        body: JSON.stringify({ reference: cleanTicket, ticketOnly: true })
       });
-      await readApiResponse(response, 'Could not verify your ticket or agent username.');
-      setVerifiedReference(reference.trim());
+      await readApiResponse(response, 'Hindi ma-verify ang inyong Ticket Number.');
+      setVerifiedReference(cleanTicket);
     } catch (verificationError) {
-      setError(verificationError.message || 'Could not verify your ticket or agent username.');
+      setError(verificationError.message || 'Hindi ma-verify ang inyong Ticket Number.');
     } finally {
       setIsVerifying(false);
     }
@@ -73,11 +81,12 @@ export default function EngagementTaskModal({ taskId, onClose }) {
     setError('');
     setIsSubmitting(true);
     try {
+      const ticketToSubmit = verifiedReference || reference.trim().toUpperCase();
       const uploadResponse = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/proof`, {
         method: 'POST',
         headers: {
           'Content-Type': proofFile.type,
-          'x-entry-reference': reference.trim()
+          'x-entry-reference': ticketToSubmit
         },
         body: proofFile
       });
@@ -85,7 +94,7 @@ export default function EngagementTaskModal({ taskId, onClose }) {
       const completionResponse = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference: reference.trim(), proof })
+        body: JSON.stringify({ reference: ticketToSubmit, proof, ticketOnly: true })
       });
       const result = await readApiResponse(completionResponse, 'Could not submit your task proof.');
       setSubmissionResult(result);
@@ -140,38 +149,47 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                   </div>
 
                   <label className="block text-sm font-bold text-slate-800">
-                    Ticket Number o Agent Username
+                    Opisyal na Ticket Number
                     <span className="ml-1 text-red-600">*</span>
                     <span className="mt-1 block text-xs font-normal text-slate-500">
-                      I-type ang inyong opisyal na Ticket Number (halimbawa: STL-20261125-123456).
+                      I-type ang inyong opisyal na Ticket Number (halimbawa: STL-20261125-123456). Hindi maaaring mag-proceed kung hindi Ticket Number.
                     </span>
                     <input
                       value={reference}
-                      onChange={(event) => setReference(event.target.value)}
+                      onChange={(event) => {
+                        setReference(event.target.value.toUpperCase());
+                        if (error) setError('');
+                      }}
                       required
-                      maxLength="120"
+                      maxLength="40"
                       autoComplete="off"
-                      placeholder="STL-20261125-123456 o inyong username"
-                      className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 font-normal outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 font-mono text-sm"
+                      placeholder="STL-20261125-123456"
+                      className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 font-normal outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 font-mono text-sm uppercase tracking-wider"
                     />
                   </label>
                   {error && (
-                    <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 font-medium">
                       {error}
                     </p>
                   )}
                   <button
                     type="submit"
-                    disabled={isVerifying}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
+                    disabled={isVerifying || !reference.trim()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm transition"
                   >
-                    {isVerifying ? 'Kasalukuyang Vine-verify…' : 'I-verify ang Ticket Number Bago Mag-Engage'}
+                    {isVerifying ? 'Kasalukuyang Vine-verify ang Ticket…' : 'I-verify ang Ticket Number Bago Mag-Proceed'}
                   </button>
                 </form>
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                    <p className="text-sm font-bold text-emerald-900">Entry reference verified</p>
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Na-verify ang Ticket Number:</p>
+                        <p className="text-sm font-mono font-black text-emerald-950">{verifiedReference}</p>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
@@ -179,9 +197,9 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                         setProofFile(null);
                         setError('');
                       }}
-                      className="text-xs font-bold text-emerald-800 underline"
+                      className="text-xs font-bold text-emerald-800 underline hover:text-emerald-950"
                     >
-                      Change
+                      Palitan
                     </button>
                   </div>
                   <a
