@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, ShieldCheck, Sparkles, Ticket, Upload, Users } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, Gift, Loader2, ShieldCheck, Sparkles, Ticket, Trash2, Upload, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { formatManilaDateTime, getCountdownParts, getEntrySchedule } from '../utils/entrySchedule';
 import { SUPERVISOR_NAMES } from '../utils/supervisors';
@@ -33,6 +33,10 @@ const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 export default function LandingPage({ pageSettings }) {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [proofFiles, setProofFiles] = useState({});
+  const [proofPreviews, setProofPreviews] = useState({});
+  const [previewLoading, setPreviewLoading] = useState({});
+  const [uploadStepInfo, setUploadStepInfo] = useState({ step: 0, total: 4, label: '' });
+  const previewUrlsRef = useRef({});
   const [generatedTicket, setGeneratedTicket] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -44,6 +48,14 @@ export default function LandingPage({ pageSettings }) {
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
   }, []);
 
   const entrySchedule = getEntrySchedule(pageSettings.entryStartAt, pageSettings.entryEndAt, now);
@@ -68,10 +80,26 @@ export default function LandingPage({ pageSettings }) {
 
   const handleProofChange = (pageId, file) => {
     setError('');
-    setProofFiles((previous) => ({ ...previous, [pageId]: null }));
+    if (previewUrlsRef.current[pageId]) {
+      URL.revokeObjectURL(previewUrlsRef.current[pageId]);
+      delete previewUrlsRef.current[pageId];
+    }
+
     if (!file) {
+      setProofFiles((previous) => {
+        const copy = { ...previous };
+        delete copy[pageId];
+        return copy;
+      });
+      setProofPreviews((previous) => {
+        const copy = { ...previous };
+        delete copy[pageId];
+        return copy;
+      });
+      setPreviewLoading((previous) => ({ ...previous, [pageId]: false }));
       return;
     }
+
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       setError('Upload screenshots as PNG, JPG, or WebP images.');
       return;
@@ -80,19 +108,56 @@ export default function LandingPage({ pageSettings }) {
       setError('Each screenshot must be no larger than 4 MB.');
       return;
     }
+
+    setPreviewLoading((previous) => ({ ...previous, [pageId]: true }));
+    const objectUrl = URL.createObjectURL(file);
+    previewUrlsRef.current[pageId] = objectUrl;
+    setProofPreviews((previous) => ({ ...previous, [pageId]: objectUrl }));
     setProofFiles((previous) => ({ ...previous, [pageId]: file }));
+
+    // Instant micro-load for smooth, zero-lag experience
+    setTimeout(() => {
+      setPreviewLoading((previous) => ({ ...previous, [pageId]: false }));
+    }, 120);
+  };
+
+  const handleRemoveProof = (pageId) => {
+    if (previewUrlsRef.current[pageId]) {
+      URL.revokeObjectURL(previewUrlsRef.current[pageId]);
+      delete previewUrlsRef.current[pageId];
+    }
+    setProofFiles((previous) => {
+      const copy = { ...previous };
+      delete copy[pageId];
+      return copy;
+    });
+    setProofPreviews((previous) => {
+      const copy = { ...previous };
+      delete copy[pageId];
+      return copy;
+    });
+    setPreviewLoading((previous) => ({ ...previous, [pageId]: false }));
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
     setError('');
+    setUploadStepInfo({ step: 1, total: 4, label: 'Inihahanda ang mga screenshot proof…' });
 
     try {
       const proofScreenshots = [];
-      for (const page of PROOF_PAGES) {
+      for (let i = 0; i < PROOF_PAGES.length; i++) {
+        const page = PROOF_PAGES[i];
         const file = proofFiles[page.id];
-        if (!file) throw new Error(`Please upload a screenshot for ${page.name}.`);
+        if (!file) throw new Error(`Paki-upload ang screenshot proof para sa ${page.name}.`);
+
+        setUploadStepInfo({
+          step: i + 1,
+          total: 4,
+          label: `Ina-upload ang Patunay ${i + 1} ng 3: ${page.name}…`
+        });
+
         const uploadResponse = await fetch('/api/proofs/upload', {
           method: 'POST',
           headers: { 'Content-Type': file.type },
@@ -102,6 +167,12 @@ export default function LandingPage({ pageSettings }) {
         proofScreenshots.push({ pageKey: page.id, filename: uploadData.filename });
       }
 
+      setUploadStepInfo({
+        step: 4,
+        total: 4,
+        label: 'Kinukumpleto at inilalabas ang inyong opisyal na raffle ticket…'
+      });
+
       const response = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,6 +181,12 @@ export default function LandingPage({ pageSettings }) {
       const data = await readApiResponse(response, 'Could not submit your entry.');
       setGeneratedTicket(data.ticket);
       setFormData(EMPTY_FORM);
+
+      Object.values(previewUrlsRef.current).forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+      previewUrlsRef.current = {};
+      setProofPreviews({});
       setProofFiles({});
       setConsent(false);
     } catch (submitError) {
@@ -117,6 +194,7 @@ export default function LandingPage({ pageSettings }) {
       setError(submitError.message || 'Could not submit your entry. Please try again.');
     } finally {
       setIsSubmitting(false);
+      setUploadStepInfo({ step: 0, total: 4, label: '' });
     }
   };
 
@@ -537,28 +615,83 @@ export default function LandingPage({ pageSettings }) {
                 <div className="space-y-3">
                   <div>
                     <h4 className="text-sm font-extrabold text-slate-900">Screenshot proofs</h4>
-                    <p className="mt-1 text-xs text-slate-500">PNG, JPG, or WebP. Maximum 4 MB each.</p>
+                    <p className="mt-1 text-xs text-slate-500">PNG, JPG, o WebP. Maximum 4 MB bawat screenshot.</p>
                   </div>
-                  {PROOF_PAGES.map((page, index) => (
-                    <label key={page.id} className="block rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200">
-                      <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-xs font-black text-blue-800 ring-1 ring-slate-200">
-                          0{index + 1}
-                        </span>
-                        {page.name} <span className="text-red-600">*</span>
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        required
-                        onChange={(event) => handleProofChange(page.id, event.target.files?.[0])}
-                        className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-800"
-                      />
-                      <span className="mt-2 block text-xs text-slate-500">
-                        {proofFiles[page.id]?.name || 'Choose a screenshot for this page.'}
-                      </span>
-                    </label>
-                  ))}
+                  {PROOF_PAGES.map((page, index) => {
+                    const isFileSelected = Boolean(proofFiles[page.id]);
+                    const isPreviewing = Boolean(proofPreviews[page.id]);
+                    const isLoading = Boolean(previewLoading[page.id]);
+
+                    return (
+                      <div key={page.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-xs font-black text-blue-800 ring-1 ring-slate-200">
+                              0{index + 1}
+                            </span>
+                            {page.name} <span className="text-red-600">*</span>
+                          </span>
+                          {isFileSelected && !isLoading && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Na-load
+                            </span>
+                          )}
+                        </div>
+
+                        {/* File input */}
+                        <div className="mt-3">
+                          <label className="block cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              required={!isFileSelected}
+                              disabled={isSubmitting}
+                              onChange={(event) => handleProofChange(page.id, event.target.files?.[0])}
+                              className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-blue-800 file:cursor-pointer disabled:opacity-50"
+                            />
+                          </label>
+                        </div>
+
+                        {/* Loading animation while image preview renders */}
+                        {isLoading && (
+                          <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-900 animate-pulse">
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-600 shrink-0" />
+                            <span className="font-semibold">Ipinapakita ang preview ng screenshot nang mabilis…</span>
+                          </div>
+                        )}
+
+                        {/* Instant smooth thumbnail preview */}
+                        {!isLoading && isPreviewing && (
+                          <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-white p-2.5 shadow-sm transition-all">
+                            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                              <img
+                                src={proofPreviews[page.id]}
+                                alt={`Screenshot ${page.name}`}
+                                className="h-full w-full object-cover transition hover:scale-105"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-bold text-slate-900 font-mono">
+                                {proofFiles[page.id]?.name}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                {proofFiles[page.id] ? `${(proofFiles[page.id].size / (1024 * 1024)).toFixed(2)} MB • Handa nang i-upload` : ''}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveProof(page.id)}
+                              disabled={isSubmitting}
+                              title="Alisin o palitan ang screenshot"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <label className="flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-600">
@@ -576,13 +709,50 @@ export default function LandingPage({ pageSettings }) {
                   </span>
                 </label>
 
+                {/* Upload loading animation card */}
+                {isSubmitting && (
+                  <div className="rounded-2xl border-2 border-blue-200 bg-blue-50/90 p-4 shadow-sm text-center space-y-3">
+                    <div className="flex items-center justify-center gap-2 text-blue-800">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-700" />
+                      <span className="font-extrabold text-sm sm:text-base">Pinoproseso ang inyong entry…</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-bold text-blue-900 px-1">
+                        <span>Hakbang {uploadStepInfo.step} ng {uploadStepInfo.total}</span>
+                        <span>{Math.round((uploadStepInfo.step / uploadStepInfo.total) * 100)}%</span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-blue-200">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-300 ease-out"
+                          style={{ width: `${(uploadStepInfo.step / uploadStepInfo.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs font-medium text-blue-900 animate-pulse">
+                      {uploadStepInfo.label}
+                    </p>
+                    <p className="text-[11px] text-blue-600">
+                      Mangyaring huwag i-refresh o isara ang pahinang ito.
+                    </p>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={isSubmitting || !consent || !entrySchedule.isOpen}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Uploading proofs and generating ticket…' : 'Submit proofs and get my ticket'}
-                  {!isSubmitting && <ArrowRight className="h-4 w-4" />}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{uploadStepInfo.label || 'Kasalukuyang ina-upload…'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Submit proofs and get my ticket</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
                 </button>
               </form>
             ) : (

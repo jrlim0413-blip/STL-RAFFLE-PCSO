@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, CheckCircle2, Copy, ExternalLink, Upload, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, CheckCircle2, Copy, ExternalLink, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -9,6 +9,10 @@ export default function EngagementTaskModal({ taskId, onClose }) {
   const [task, setTask] = useState(null);
   const [reference, setReference] = useState('');
   const [proofFile, setProofFile] = useState(null);
+  const [proofPreview, setProofPreview] = useState(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [taskUploadProgress, setTaskUploadProgress] = useState({ step: 0, total: 2, message: '' });
+  const previewUrlRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -17,6 +21,14 @@ export default function EngagementTaskModal({ taskId, onClose }) {
   const [copiedComment, setCopiedComment] = useState(false);
   const [verifiedReference, setVerifiedReference] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -72,14 +84,58 @@ export default function EngagementTaskModal({ taskId, onClose }) {
     }
   };
 
+  const handleProofSelect = (file) => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    if (!file) {
+      setProofFile(null);
+      setProofPreview(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type) || file.size > MAX_FILE_SIZE) {
+      setProofFile(null);
+      setProofPreview(null);
+      setIsPreviewLoading(false);
+      setError('Pumili ng PNG, JPG, o WebP screenshot na hindi lalagpas sa 4 MB.');
+      return;
+    }
+
+    setError('');
+    setIsPreviewLoading(true);
+    const url = URL.createObjectURL(file);
+    previewUrlRef.current = url;
+    setProofPreview(url);
+    setProofFile(file);
+
+    // Instant micro-load for smooth, zero-lag rendering
+    setTimeout(() => {
+      setIsPreviewLoading(false);
+    }, 120);
+  };
+
+  const handleRemoveProof = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setProofFile(null);
+    setProofPreview(null);
+    setIsPreviewLoading(false);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!proofFile) {
-      setError('Upload one screenshot of your engagement with the post.');
+      setError('Paki-upload ang isang screenshot proof ng inyong engagement sa post.');
       return;
     }
     setError('');
     setIsSubmitting(true);
+    setTaskUploadProgress({ step: 1, total: 2, message: 'Ina-upload ang inyong screenshot proof…' });
+
     try {
       const ticketToSubmit = verifiedReference || reference.trim().toUpperCase();
       const uploadResponse = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/proof`, {
@@ -91,6 +147,9 @@ export default function EngagementTaskModal({ taskId, onClose }) {
         body: proofFile
       });
       const proof = await readApiResponse(uploadResponse, 'Could not upload your task screenshot.');
+
+      setTaskUploadProgress({ step: 2, total: 2, message: 'Sinusuri at itinatala ang inyong daily engagement task…' });
+
       const completionResponse = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,11 +158,17 @@ export default function EngagementTaskModal({ taskId, onClose }) {
       const result = await readApiResponse(completionResponse, 'Could not submit your task proof.');
       setSubmissionResult(result);
       setSubmitted(true);
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
       setProofFile(null);
+      setProofPreview(null);
     } catch (submitError) {
       setError(submitError.message || 'Could not submit your task proof. Please try again.');
     } finally {
       setIsSubmitting(false);
+      setTaskUploadProgress({ step: 0, total: 2, message: '' });
     }
   };
 
@@ -194,7 +259,7 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                       type="button"
                       onClick={() => {
                         setVerifiedReference('');
-                        setProofFile(null);
+                        handleRemoveProof();
                         setError('');
                       }}
                       className="text-xs font-bold text-emerald-800 underline hover:text-emerald-950"
@@ -235,33 +300,88 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                     </div>
                   ) : (
                     <form onSubmit={handleSubmit} className="space-y-4">
-                      <label className="block text-sm font-bold text-slate-800">
-                        Screenshot proof <span className="text-red-600">*</span>
-                        <span className="mt-1 block text-xs font-normal text-slate-500">PNG, JPG, or WebP; maximum 4 MB.</span>
-                        <input
-                          key={verifiedReference}
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          required
-                          onChange={(event) => {
-                            const file = event.target.files?.[0] || null;
-                            if (!file) {
-                              setProofFile(null);
-                              return;
-                            }
-                            if (!ACCEPTED_IMAGE_TYPES.includes(file.type) || file.size > MAX_FILE_SIZE) {
-                              setProofFile(null);
-                              setError('Choose a PNG, JPG, or WebP screenshot no larger than 4 MB.');
-                              event.target.value = '';
-                              return;
-                            }
-                            setError('');
-                            setProofFile(file);
-                          }}
-                          className="mt-2 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-800"
-                        />
-                        {proofFile && <span className="mt-1 block text-xs text-slate-500">{proofFile.name}</span>}
-                      </label>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-bold text-slate-800">
+                          Screenshot proof <span className="text-red-600">*</span>
+                          <span className="mt-1 block text-xs font-normal text-slate-500">PNG, JPG, o WebP; maximum 4 MB.</span>
+                          <input
+                            key={verifiedReference}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            required={!proofFile}
+                            disabled={isSubmitting}
+                            onChange={(event) => handleProofSelect(event.target.files?.[0])}
+                            className="mt-2 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-blue-800 file:cursor-pointer disabled:opacity-50"
+                          />
+                        </label>
+
+                        {/* Loading animation while screenshot preview renders */}
+                        {isPreviewLoading && (
+                          <div className="flex items-center gap-2.5 rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-900 animate-pulse">
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-600 shrink-0" />
+                            <span className="font-semibold">Ipinapakita ang preview ng screenshot nang mabilis…</span>
+                          </div>
+                        )}
+
+                        {/* Instant smooth thumbnail preview */}
+                        {!isPreviewLoading && proofPreview && (
+                          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-2.5 shadow-sm">
+                            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-300 bg-white">
+                              <img
+                                src={proofPreview}
+                                alt="Task Screenshot Proof"
+                                className="h-full w-full object-cover transition hover:scale-105"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                <span className="truncate">Handa na ang screenshot proof</span>
+                              </div>
+                              <p className="mt-0.5 truncate text-[11px] font-mono text-slate-700">
+                                {proofFile?.name}
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                {proofFile ? `${(proofFile.size / (1024 * 1024)).toFixed(2)} MB • Handa nang i-submit` : ''}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleRemoveProof}
+                              disabled={isSubmitting}
+                              title="Alisin o palitan ang screenshot"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Loading animation card while submitting */}
+                      {isSubmitting && (
+                        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/90 p-4 text-center space-y-2.5 shadow-sm">
+                          <div className="flex items-center justify-center gap-2 text-emerald-900">
+                            <Loader2 className="h-6 w-6 animate-spin text-emerald-700" />
+                            <span className="font-extrabold text-sm">Pinoproseso ang inyong task submission…</span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs font-bold text-emerald-900 px-1">
+                              <span>Hakbang {taskUploadProgress.step} ng {taskUploadProgress.total}</span>
+                              <span>{Math.round((taskUploadProgress.step / taskUploadProgress.total) * 100)}%</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-200">
+                              <div
+                                className="h-full bg-emerald-600 transition-all duration-300 ease-out"
+                                style={{ width: `${(taskUploadProgress.step / taskUploadProgress.total) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                          <p className="text-xs font-medium text-emerald-800 animate-pulse">
+                            {taskUploadProgress.message}
+                          </p>
+                        </div>
+                      )}
 
                       {error && (
                         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -270,12 +390,21 @@ export default function EngagementTaskModal({ taskId, onClose }) {
                       )}
                       <button
                         type="submit"
-                        disabled={isSubmitting}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={isSubmitting || !proofFile}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-sm font-extrabold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm transition"
                       >
-                        <Upload className="h-4 w-4" />
-                        {isSubmitting ? 'Uploading and submitting…' : 'Submit screenshot proof'}
-                        {!isSubmitting && <ArrowUpRight className="h-4 w-4" />}
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>{taskUploadProgress.message || 'Kasalukuyang isinusumite…'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            <span>Submit screenshot proof</span>
+                            <ArrowUpRight className="h-4 w-4" />
+                          </>
+                        )}
                       </button>
                     </form>
                   )}
