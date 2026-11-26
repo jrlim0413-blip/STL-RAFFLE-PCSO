@@ -23,12 +23,16 @@ function FacebookIcon({ className }) {
 
 export default function ShareModal({ onClose, customUrl = '' }) {
   const [activeTab, setActiveTab] = useState('choice'); // 'choice', 'qr', 'link'
-  const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedMessage, setCopiedMessage] = useState(false);
   
   // Siguraduhing laging sa LANDING PAGE (/) pupunta ang share link, hindi sa /admin
   const getLandingUrl = () => {
     if (customUrl) return customUrl;
     if (typeof window !== 'undefined') {
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'https://stl-raffle-campaign.vercel.app/';
+      }
       return `${window.location.origin}/`;
     }
     return 'https://stl-raffle-campaign.vercel.app/';
@@ -36,28 +40,32 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
   const shareDescription = 'Sumali sa opisyal na STL Community Rice Raffle! 6 Maswerteng Winners ng Bigas (5kg at 25kg). I-click ang link o i-scan ang QR code gamit ang phone camera para mag-proceed sa browser at makuha ang iyong raffle ticket!';
+  const shareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\nSumali sa raffle at makuha ang iyong ticket dito:\n👉 ${shareUrl}`;
 
   // QR Code generator URL (350x350 high quality, 10 margin)
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(shareUrl)}&margin=12&format=png`;
 
-  const handleCopy = async () => {
+  const copyToClipboard = async (text, setSuccess) => {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
+        await navigator.clipboard.writeText(text);
       } else {
         const textArea = document.createElement('textarea');
-        textArea.value = shareUrl;
+        textArea.value = text;
         document.body.appendChild(textArea);
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2500);
     } catch (err) {
-      console.error('Failed to copy link:', err);
+      console.error('Failed to copy text:', err);
     }
   };
+
+  const handleCopyLink = () => copyToClipboard(shareUrl, setCopiedLink);
+  const handleCopyMessage = () => copyToClipboard(shareMessage, setCopiedMessage);
 
   const handleDownloadQr = async () => {
     try {
@@ -83,8 +91,13 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   };
 
   const shareToMessenger = () => {
-    const messengerUrl = `fb-messenger://share/?link=${encodeURIComponent(shareUrl)}`;
-    window.open(messengerUrl, '_blank');
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+    if (isMobile) {
+      window.location.href = `fb-messenger://share/?link=${encodeURIComponent(shareUrl)}`;
+    } else {
+      const sendUrl = `https://www.facebook.com/dialog/send?link=${encodeURIComponent(shareUrl)}&app_id=1683164939840104&redirect_uri=${encodeURIComponent(shareUrl)}`;
+      window.open(sendUrl, '_blank', 'width=650,height=600');
+    }
   };
 
   const shareToTelegram = () => {
@@ -270,17 +283,17 @@ export default function ShareModal({ onClose, customUrl = '' }) {
                   </div>
                   <button
                     type="button"
-                    onClick={handleCopy}
+                    onClick={handleCopyLink}
                     className={`inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-black shadow-sm transition ${
-                      copied
+                      copiedLink
                         ? 'bg-emerald-600 text-white'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     }`}
                   >
-                    {copied ? (
+                    {copiedLink ? (
                       <>
                         <Check className="w-4 h-4" />
-                        Nakopya na!
+                        Nakopya ang Link!
                       </>
                     ) : (
                       <>
@@ -290,12 +303,59 @@ export default function ShareModal({ onClose, customUrl = '' }) {
                     )}
                   </button>
                 </div>
-                {copied && (
-                  <p className="text-xs font-bold text-emerald-700 mt-2 flex items-center gap-1.5 animate-fadeIn">
-                    <Check className="w-4 h-4" />
-                    Matagumpay na nakopya! Pwede mo na i-paste sa Facebook, Messenger, Viber o SMS.
+              </div>
+
+              {/* 1-Click Copy Full Message for Messenger */}
+              <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-left w-full sm:w-auto">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md">
+                    Copy &amp; Paste sa Messenger
+                  </span>
+                  <p className="text-xs font-bold text-slate-800 mt-1">
+                    I-copy ang kumpletong mensahe na may kasamang paanyaya at link!
                   </p>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyMessage}
+                  className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black shadow-sm transition shrink-0 ${
+                    copiedMessage
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                  }`}
+                >
+                  {copiedMessage ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Nakopya ang Mensahe!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Kopyahin ang Mensahe
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Success Notification */}
+              {(copiedLink || copiedMessage) && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2 animate-fadeIn">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    {copiedMessage 
+                      ? 'Matagumpay na nakopya ang buong mensahe! I-paste lang sa Messenger, Facebook, o Group Chat.'
+                      : 'Matagumpay na nakopya ang link! Pwede mo na i-paste sa Messenger, Facebook, o SMS.'}
+                  </span>
+                </div>
+              )}
+
+              {/* Messenger Preview Tip */}
+              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-blue-900 flex items-start gap-2.5">
+                <span className="text-base leading-none">💡</span>
+                <p className="leading-relaxed">
+                  <strong>Tip sa Messenger:</strong> Pagka-paste ng link sa chat box, <strong>maghintay ng 1 hanggang 2 segundo</strong> bago pindutin ang Send para kusa munang lumitaw ang litrato ng Bigas at Raffle Card!
+                </p>
               </div>
 
               {/* Direct Social Media Sharing Buttons */}
