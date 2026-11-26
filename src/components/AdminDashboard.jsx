@@ -796,6 +796,7 @@ export default function AdminDashboard({
       {showShareModal && (
         <ShareModal
           onClose={() => setShowShareModal(false)}
+          customUrl={officialShareUrl}
         />
       )}
     </div>
