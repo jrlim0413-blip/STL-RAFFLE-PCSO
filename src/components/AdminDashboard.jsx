@@ -592,7 +592,12 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {showShareModal && <ShareModal onClose={() => setShowShareModal(false)} />}
+      {showShareModal && (
+        <ShareModal
+          customUrl={typeof window !== 'undefined' ? `${window.location.origin}/` : ''}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 }

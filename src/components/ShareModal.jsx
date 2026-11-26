@@ -25,8 +25,15 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   const [activeTab, setActiveTab] = useState('choice'); // 'choice', 'qr', 'link'
   const [copied, setCopied] = useState(false);
   
-  // Use current page origin and path, or fallback to current location
-  const shareUrl = customUrl || (typeof window !== 'undefined' ? window.location.href.split('#')[0] : 'https://stl-raffle.com');
+  // Siguraduhing laging sa LANDING PAGE (/) pupunta ang share link, hindi sa /admin
+  const getLandingUrl = () => {
+    if (customUrl) return customUrl;
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/`;
+    }
+    return 'https://stl-raffle-pcso.vercel.app/';
+  };
+  const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
   const shareDescription = 'Sumali sa opisyal na STL Community Rice Raffle! 6 Maswerteng Winners ng Bigas (5kg at 25kg). I-click ang link o i-scan ang QR code gamit ang phone camera para mag-proceed sa browser at makuha ang iyong raffle ticket!';
 
@@ -354,7 +361,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
               {/* Enticing Banner Image */}
               <div className="relative aspect-[16/9] w-full bg-slate-900 overflow-hidden">
                 <img
-                  src="/images/share-preview.png"
+                  src="/images/share-preview.jpg"
                   alt="STL Community Rice Raffle"
                   className="w-full h-full object-cover object-center"
                 />
