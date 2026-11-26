@@ -163,7 +163,7 @@ export default function AdminDashboard({
   };
 
   const officialShareUrl = `${getPublicBaseUrl()}/?ref=share`;
-  const officialShareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\n\n👉 Pindutin ang Link para sumali at makuha ang iyong ticket:\n${officialShareUrl}\n\n📲 O i-scan ang QR code sa banner gamit ang camera ng cellphone!`;
+  const officialShareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\nSumali sa raffle at makuha ang iyong ticket dito:\n👉 ${officialShareUrl}`;
 
   const copyTaskLink = async (taskId) => {
     setError('');

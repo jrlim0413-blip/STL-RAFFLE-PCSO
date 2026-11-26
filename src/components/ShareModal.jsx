@@ -41,7 +41,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
   const shareDescription = 'Sumali sa opisyal na STL Community Rice Raffle! 6 Maswerteng Winners ng Bigas (5kg at 25kg). I-click ang link o i-scan ang QR code gamit ang phone camera para mag-proceed sa browser at makuha ang iyong raffle ticket!';
-  const shareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\n\n👉 Pindutin ang Link para sumali:\n${shareUrl}\n\n📲 O i-scan ang QR code sa banner gamit ang camera ng cellphone!`;
+  const shareMessage = `🌾 STL COMMUNITY RICE RAFFLE 🌾\n6 Maswerteng Mananalo ng Bigas (5kg & 25kg)!\nSumali sa raffle at makuha ang iyong ticket dito:\n👉 ${shareUrl}`;
 
   // QR Code generator URL (350x350 high quality, 10 margin)
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(shareUrl)}&margin=12&format=png`;
