@@ -31,11 +31,11 @@ export default function ShareModal({ onClose, customUrl = '' }) {
     if (customUrl) return customUrl;
     if (typeof window !== 'undefined') {
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return 'https://stl-raffle-campaign.vercel.app/';
+        return 'https://stl-raffle-campaign.vercel.app/?ref=share';
       }
-      return `${window.location.origin}/`;
+      return `${window.location.origin}/?ref=share`;
     }
-    return 'https://stl-raffle-campaign.vercel.app/';
+    return 'https://stl-raffle-campaign.vercel.app/?ref=share';
   };
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
