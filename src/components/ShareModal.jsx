@@ -28,14 +28,20 @@ export default function ShareModal({ onClose, customUrl = '' }) {
   
   // Siguraduhing laging sa LANDING PAGE (/) pupunta ang share link, hindi sa /admin
   const getLandingUrl = () => {
-    if (customUrl) return customUrl;
-    if (typeof window !== 'undefined') {
+    let base = 'https://stl-raffle-campaign.vercel.app/';
+    if (customUrl) {
+      base = customUrl;
+    } else if (typeof window !== 'undefined') {
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return 'https://stl-raffle-campaign.vercel.app/?ref=share';
+        base = 'https://stl-raffle-campaign.vercel.app/';
+      } else {
+        base = `${window.location.origin}/`;
       }
-      return `${window.location.origin}/?ref=share`;
     }
-    return 'https://stl-raffle-campaign.vercel.app/?ref=share';
+    if (base.includes('?')) {
+      return base;
+    }
+    return `${base.replace(/\/$/, '')}/?ref=share`;
   };
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';
