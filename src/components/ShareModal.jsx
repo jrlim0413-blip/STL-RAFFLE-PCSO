@@ -453,7 +453,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
                 Live Link Preview (Lalabas pag ipinaste mo sa Facebook / Messenger):
               </span>
               <span className="text-[11px] font-bold text-slate-400">
-                May Kasamang Litrato ng Bigas
+                May Kasamang Litrato ng Bigas &amp; HD QR Code
               </span>
             </div>
 
