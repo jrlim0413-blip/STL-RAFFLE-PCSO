@@ -30,6 +30,17 @@ const EMPTY_FORM = { agent: '', contact: '', agentUsername: '', supervisorName: 
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
+export function isValidFullName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  const nameRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s.'-]+$/;
+  if (!nameRegex.test(trimmed)) return false;
+  const substantialParts = parts.filter((p) => p.replace(/[^a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ]/g, '').length >= 2);
+  return substantialParts.length >= 2;
+}
+
 export default function LandingPage({ pageSettings }) {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [proofFiles, setProofFiles] = useState({});
@@ -141,8 +152,14 @@ export default function LandingPage({ pageSettings }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setIsSubmitting(true);
     setError('');
+
+    if (!isValidFullName(formData.agent)) {
+      setError('Pakilagay ang inyong buong pangalan (Full Name: First Name at Last Name, halimbawa: Juan Dela Cruz). Hindi tatanggapin ang palayaw o solong pangalan lamang.');
+      return;
+    }
+
+    setIsSubmitting(true);
     setUploadStepInfo({ step: 1, total: 4, label: 'Inihahanda ang mga screenshot proof…' });
 
     try {
@@ -556,7 +573,10 @@ export default function LandingPage({ pageSettings }) {
                 )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block text-sm font-bold text-slate-800">
-                    Name <span className="text-red-600">*</span>
+                    Full Name (Buong Pangalan) <span className="text-red-600">*</span>
+                    <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                      Ilagay ang First Name at Last Name (halimbawa: Juan Dela Cruz).
+                    </span>
                     <input
                       name="agent"
                       value={formData.agent}
@@ -564,6 +584,7 @@ export default function LandingPage({ pageSettings }) {
                       required
                       maxLength="100"
                       autoComplete="name"
+                      placeholder="Juan Dela Cruz"
                       className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 font-normal outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                     />
                   </label>

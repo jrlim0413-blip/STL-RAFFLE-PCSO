@@ -146,6 +146,17 @@ function getFacebookPostUrl(value) {
   }
 }
 
+export function isValidFullName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  const nameRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s.'-]+$/;
+  if (!nameRegex.test(trimmed)) return false;
+  const substantialParts = parts.filter((p) => p.replace(/[^a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ]/g, '').length >= 2);
+  return substantialParts.length >= 2;
+}
+
 async function resolveTaskEntry(reference, ticketOnly = false) {
   if (typeof reference !== 'string' || !reference.trim()) {
     return { error: { status: 400, message: ticketOnly ? 'Ilagay ang inyong opisyal na Ticket Number.' : 'Enter your raffle ticket number or agent username.' } };
@@ -387,6 +398,61 @@ app.post('/api/tasks', requireAdmin, asyncRoute(async (req, res) => {
   res.status(201).json({ success: true, task, settings });
 }));
 
+app.put('/api/tasks/:taskId', requireAdmin, asyncRoute(async (req, res) => {
+  const taskId = req.params.taskId;
+  const body = req.body || {};
+  const postUrl = getFacebookPostUrl(body.postUrl);
+  if (!postUrl) {
+    return res.status(400).json({ success: false, error: 'Enter a valid HTTPS Facebook post URL.' });
+  }
+  for (const field of ['instruction', 'suggestedComment']) {
+    if (body[field] !== undefined && typeof body[field] !== 'string') {
+      return res.status(400).json({ success: false, error: `${field} must be text.` });
+    }
+  }
+  const instruction = (body.instruction || '').trim();
+  const suggestedComment = (body.suggestedComment || '').trim();
+  if (instruction.length > 500 || suggestedComment.length > 500) {
+    return res.status(400).json({ success: false, error: 'Task instructions and suggested comment must be 500 characters or fewer.' });
+  }
+
+  const current = await getSettings(DEFAULT_SETTINGS);
+  const tasks = Array.isArray(current.engagementTasks) ? current.engagementTasks : [];
+  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  if (taskIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+  }
+
+  const updatedTask = {
+    ...tasks[taskIndex],
+    postUrl,
+    instruction,
+    suggestedComment,
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedTasks = [...tasks];
+  updatedTasks[taskIndex] = updatedTask;
+
+  const settings = { ...current, engagementTasks: updatedTasks };
+  await saveSettings(settings);
+  res.json({ success: true, task: updatedTask, settings });
+}));
+
+app.delete('/api/tasks/:taskId', requireAdmin, asyncRoute(async (req, res) => {
+  const taskId = req.params.taskId;
+  const current = await getSettings(DEFAULT_SETTINGS);
+  const tasks = Array.isArray(current.engagementTasks) ? current.engagementTasks : [];
+  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  if (taskIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Engagement task not found.' });
+  }
+  const updatedTasks = tasks.filter((task) => task.id !== taskId);
+  const settings = { ...current, engagementTasks: updatedTasks };
+  await saveSettings(settings);
+  res.json({ success: true, settings });
+}));
+
 app.post('/api/tasks/:taskId/verify', asyncRoute(async (req, res) => {
   const task = await findEngagementTask(req.params.taskId);
   if (!task) return res.status(404).json({ success: false, error: 'Engagement task not found.' });
@@ -546,6 +612,12 @@ app.post('/api/submit', asyncRoute(async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'Name, contact number, agent username, and supervisor name are required.'
+    });
+  }
+  if (!isValidFullName(agent)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Pakilagay ang inyong buong pangalan (Full Name: First Name at Last Name, halimbawa: Juan Dela Cruz).'
     });
   }
   if (!SUPERVISOR_NAMES.includes(supervisorName)) {

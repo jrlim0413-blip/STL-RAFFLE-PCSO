@@ -109,6 +109,21 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     assert.equal(publicTaskResponse.status, 200);
     assert.equal((await publicTaskResponse.json()).task.suggestedComment, 'Thanks for sharing!');
 
+    const updatedTaskResponse = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}`, {
+      method: 'PUT',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postUrl: 'https://www.facebook.com/reel/1234567890123456',
+        instruction: 'Updated task instruction',
+        suggestedComment: 'Updated comment'
+      })
+    });
+    assert.equal(updatedTaskResponse.status, 200);
+    const updatedTaskResult = await updatedTaskResponse.json();
+    assert.equal(updatedTaskResult.task.postUrl, 'https://www.facebook.com/reel/1234567890123456');
+    assert.equal(updatedTaskResult.task.instruction, 'Updated task instruction');
+    assert.equal(updatedTaskResult.task.suggestedComment, 'Updated comment');
+
     const invalidSchedule = await fetch(`${baseUrl}/api/settings`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -171,6 +186,20 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     });
     assert.equal(invalidSupervisor.status, 400);
     assert.match((await invalidSupervisor.json()).error, /valid supervisor/i);
+
+    const singleNameEntry = await fetch(`${baseUrl}/api/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'Juan',
+        contact: '55501099',
+        agentUsername: 'single-name-agent',
+        supervisorName: 'SPVR JED',
+        consent: true
+      })
+    });
+    assert.equal(singleNameEntry.status, 400);
+    assert.match((await singleNameEntry.json()).error, /buong pangalan/i);
 
     const uploads = [];
     for (const pageKey of proofPages) {

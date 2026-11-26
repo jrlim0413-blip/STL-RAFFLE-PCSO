@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Award, Check, CheckCircle2, Copy, Download, ExternalLink, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Users } from 'lucide-react';
+import { Award, Check, CheckCircle2, Copy, Download, ExternalLink, Loader2, Pencil, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Trash2, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { fromManilaDateTimeInput, toManilaDateTimeInput } from '../utils/entrySchedule';
 import ShareModal from './ShareModal';
@@ -43,6 +43,11 @@ export default function AdminDashboard({
   const [copiedShareMessage, setCopiedShareMessage] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editPostUrl, setEditPostUrl] = useState('');
+  const [editInstruction, setEditInstruction] = useState('');
+  const [editSuggestedComment, setEditSuggestedComment] = useState('');
+  const [isUpdatingTask, setIsUpdatingTask] = useState(false);
 
   useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
@@ -128,6 +133,69 @@ export default function AdminDashboard({
       setError(taskError.message || 'Could not create engagement task.');
     } finally {
       setIsCreatingTask(false);
+    }
+  };
+
+  const startEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditPostUrl(task.postUrl || '');
+    setEditInstruction(task.instruction || '');
+    setEditSuggestedComment(task.suggestedComment || '');
+    setError('');
+  };
+
+  const cancelEditTask = () => {
+    setEditingTaskId(null);
+    setEditPostUrl('');
+    setEditInstruction('');
+    setEditSuggestedComment('');
+  };
+
+  const saveEditedTask = async (event) => {
+    event.preventDefault();
+    if (!editingTaskId) return;
+    setIsUpdatingTask(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(editingTaskId)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': adminPasscode
+        },
+        body: JSON.stringify({
+          postUrl: editPostUrl,
+          instruction: editInstruction,
+          suggestedComment: editSuggestedComment
+        })
+      });
+      const data = await readApiResponse(response, 'Could not update engagement task.');
+      setSettings(settingsDraft(data.settings));
+      onSettingsChange(data.settings);
+      cancelEditTask();
+    } catch (updateError) {
+      setError(updateError.message || 'Could not update engagement task.');
+    } finally {
+      setIsUpdatingTask(false);
+    }
+  };
+
+  const deleteTask = async (taskId) => {
+    if (!window.confirm(`Sigurado ka bang nais mong tanggalin ang task na "${taskId}"?`)) return;
+    setError('');
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: 'DELETE',
+        headers: {
+          'x-admin-passcode': adminPasscode
+        }
+      });
+      const data = await readApiResponse(response, 'Could not delete engagement task.');
+      setSettings(settingsDraft(data.settings));
+      onSettingsChange(data.settings);
+      if (editingTaskId === taskId) cancelEditTask();
+    } catch (deleteError) {
+      setError(deleteError.message || 'Could not delete engagement task.');
     }
   };
 
@@ -556,51 +624,153 @@ export default function AdminDashboard({
             <h3 className="font-bold text-slate-900">Generated tasks</h3>
             <ul className="mt-3 space-y-3">
               {settings.engagementTasks.map((task) => (
-                <li key={task.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-mono text-sm font-bold text-blue-800">{task.id}</p>
-                    <a href={task.postUrl} target="_blank" rel="noreferrer" className="mt-1 block break-all text-xs text-slate-600 underline">
-                      {task.postUrl}
-                    </a>
-                    {task.instruction && <p className="mt-2 text-xs text-slate-600">Instruction: {task.instruction}</p>}
-                    {task.suggestedComment && <p className="mt-1 text-xs text-slate-600">Suggested comment: {task.suggestedComment}</p>}
-                  </div>
-                  <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => copyTaskLink(task.id)}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50 transition"
-                    >
-                      {copiedTaskId === task.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Nakopya ang Link</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Kopyahin ang Link</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => copyTaskMessage(task)}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 text-xs font-black shadow-sm transition"
-                    >
-                      {copiedTaskMsgId === task.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Nakopya ang Mensahe</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Kopyahin Mensahe (GC)</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <li key={task.id} className="rounded-xl border border-slate-200 p-4 bg-slate-50/50">
+                  {editingTaskId === task.id ? (
+                    <form onSubmit={saveEditedTask} className="space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-blue-200">
+                        <span className="font-mono text-xs font-black text-blue-900 bg-blue-100 px-2 py-0.5 rounded">
+                          I-edit ang {task.id}
+                        </span>
+                        <span className="text-xs text-slate-500">I-update ang impormasyon ng task</span>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700">
+                          Facebook Post URL <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="url"
+                          value={editPostUrl}
+                          onChange={(e) => setEditPostUrl(e.target.value)}
+                          required
+                          maxLength="2048"
+                          placeholder="https://www.facebook.com/..."
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700">Instruction (opsyonal)</label>
+                          <textarea
+                            value={editInstruction}
+                            onChange={(e) => setEditInstruction(e.target.value)}
+                            maxLength="500"
+                            rows="2"
+                            placeholder="Tagubilin para sa mga agent..."
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700">Suggested comment (opsyonal)</label>
+                          <textarea
+                            value={editSuggestedComment}
+                            onChange={(e) => setEditSuggestedComment(e.target.value)}
+                            maxLength="500"
+                            rows="2"
+                            placeholder="Mungkahi na komento..."
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="submit"
+                          disabled={isUpdatingTask}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-800 disabled:opacity-50 transition"
+                        >
+                          {isUpdatingTask ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <span>Sine-save…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>I-save ang Pagbabago</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditTask}
+                          disabled={isUpdatingTask}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          Kanselahin
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-mono text-sm font-bold text-blue-800">{task.id}</p>
+                          {task.updatedAt && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              (Na-edit kamakailan)
+                            </span>
+                          )}
+                        </div>
+                        <a href={task.postUrl} target="_blank" rel="noreferrer" className="mt-1 block break-all text-xs text-slate-600 underline hover:text-blue-700">
+                          {task.postUrl}
+                        </a>
+                        {task.instruction && <p className="mt-2 text-xs text-slate-600"><span className="font-semibold text-slate-700">Instruction:</span> {task.instruction}</p>}
+                        {task.suggestedComment && <p className="mt-1 text-xs text-slate-600"><span className="font-semibold text-slate-700">Suggested comment:</span> {task.suggestedComment}</p>}
+                      </div>
+                      <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => startEditTask(task)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-amber-700" />
+                          <span>I-edit ang Task</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyTaskLink(task.id)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50 transition"
+                        >
+                          {copiedTaskId === task.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Nakopya ang Link</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Kopyahin ang Link</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyTaskMessage(task)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 text-xs font-black shadow-sm transition"
+                        >
+                          {copiedTaskMsgId === task.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Nakopya ang Mensahe</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Kopyahin Mensahe (GC)</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteTask(task.id)}
+                          title="Tanggalin ang task na ito"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 transition"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-500" />
+                          <span>Tanggalin</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
