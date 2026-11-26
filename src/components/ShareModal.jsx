@@ -31,7 +31,7 @@ export default function ShareModal({ onClose, customUrl = '' }) {
     if (typeof window !== 'undefined') {
       return `${window.location.origin}/`;
     }
-    return 'https://stl-raffle-pcso.vercel.app/';
+    return 'https://stl-raffle-campaign.vercel.app/';
   };
   const shareUrl = getLandingUrl();
   const shareTitle = '🌾 STL Community Rice Raffle | Manalo ng 5kg & 25kg Bigas!';

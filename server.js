@@ -685,7 +685,7 @@ if (!process.env.VERCEL && fs.existsSync(distPath)) {
     const fullOrigin = `${protocol}://${host}`;
     try {
       let html = fs.readFileSync(indexPath, 'utf-8');
-      html = html.replace(/https:\/\/stl-raffle-pcso\.vercel\.app/g, fullOrigin);
+      html = html.replace(/https:\/\/stl-raffle-(campaign|pcso)\.vercel\.app/g, fullOrigin);
       html = html.replace(/content="\/images\/share-preview\.(jpg|png)"/g, `content="${fullOrigin}/images/share-preview.jpg"`);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
