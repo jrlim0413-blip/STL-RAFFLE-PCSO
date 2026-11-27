@@ -891,7 +891,7 @@ export default function AdminDashboard({
         </p>
       </section>
 
-      {/* PCSO-Style Lotto Tambiolo & Roulette Wheel Section */}
+      {/* STL Official Raffle Roulette Section */}
       <section id="raffle-draw">
         <RaffleRoulette
           entries={entries}

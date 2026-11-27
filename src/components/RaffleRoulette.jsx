@@ -6,8 +6,11 @@ import {
   FileText,
   Gift,
   Loader2,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Sparkles,
+  Square,
   Trophy,
   Volume2,
   VolumeX,
@@ -92,18 +95,40 @@ export default function RaffleRoulette({
   onResetDraw,
   onError
 }) {
-  const [isSpinning, setIsSpinning] = useState(false);
+  const [spinPhase, setSpinPhase] = useState('idle'); // 'idle' | 'spinning' | 'stopping'
   const [rotation, setRotation] = useState(0);
   const [currentWinner, setCurrentWinner] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [ticketFormat, setTicketFormat] = useState('last6'); // 'last6' (huling 6 digits) o 'full' (buong ticket)
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [winningSliceOverride, setWinningSliceOverride] = useState(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetNote, setResetNote] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const [exportingFormat, setExportingFormat] = useState('');
   const canvasRef = useRef(null);
   const wheelRef = useRef(null);
+  const rotationRef = useRef(0);
+  const rafRef = useRef(null);
+  const lastSliceRef = useRef(-1);
+  const isSpinning = spinPhase !== 'idle';
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && isLiveMode && !showResetModal) {
+        setIsLiveMode(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isLiveMode, showResetModal]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   const handleExportWinners = async (format) => {
     if (!drawResults.length) return;
@@ -158,7 +183,7 @@ export default function RaffleRoulette({
     return e.status === 'Eligible';
   });
 
-  // Colors for roulette wheel segments (PCSO / Lottery vibrant festive theme)
+  // Colors for roulette wheel segments (STL Community Raffle vibrant festive theme)
   const segmentColors = [
     '#1e3a8a', // Royal Blue
     '#dc2626', // Vibrant Red
@@ -171,7 +196,10 @@ export default function RaffleRoulette({
   ];
 
   // Up to 16 display segments for visual aesthetic
-  const displayItems = eligibleEntries.slice(0, 16);
+  const baseDisplayItems = eligibleEntries.slice(0, 16);
+  const displayItems = winningSliceOverride && baseDisplayItems.length > 0
+    ? [winningSliceOverride, ...baseDisplayItems.slice(1)]
+    : baseDisplayItems;
   const sliceAngle = displayItems.length > 0 ? 360 / displayItems.length : 360;
 
   // Toggle sound
@@ -180,8 +208,23 @@ export default function RaffleRoulette({
     setSoundEnabled(!soundEnabled);
   };
 
-  // Run the full physical roulette draw
-  const handleStartDraw = async () => {
+  const applyWheelAngle = (angle, pitch = 1.05) => {
+    rotationRef.current = angle;
+    if (wheelRef.current) {
+      wheelRef.current.style.transform = `rotate(${angle}deg)`;
+    }
+    if (sliceAngle > 0) {
+      const sliceIndex = Math.floor(angle / sliceAngle);
+      if (sliceIndex !== lastSliceRef.current) {
+        lastSliceRef.current = sliceIndex;
+        sfx.playTick(pitch);
+      }
+    }
+  };
+
+  // Phase 1: Admin starts continuous spin (runs until admin clicks Stop)
+  const handleStartDraw = () => {
+    if (spinPhase !== 'idle') return;
     const remainingDraws = 7 - nextRound;
     if (!nextRound || eligibleEntries.length < remainingDraws) {
       if (onError) {
@@ -191,12 +234,40 @@ export default function RaffleRoulette({
     }
 
     sfx.init();
-    setIsSpinning(true);
+    setWinningSliceOverride(null);
     setShowCelebration(false);
     setCurrentWinner(null);
+    setSpinPhase('spinning');
+
+    let lastTime = performance.now();
+    const spinSpeed = 1080; // degrees per second (3 rotations/sec)
+
+    const tickFrame = (now) => {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      applyWheelAngle(rotationRef.current + spinSpeed * dt, 1.1);
+      rafRef.current = requestAnimationFrame(tickFrame);
+    };
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tickFrame);
+  };
+
+  // Optional cancel while still freely spinning (before choosing winner)
+  const handleCancelSpin = () => {
+    if (spinPhase !== 'spinning') return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    setRotation(rotationRef.current);
+    setSpinPhase('idle');
+  };
+
+  // Phase 2: Admin stops the wheel at their discretion & draws the official winner
+  const handleStopDraw = async () => {
+    if (spinPhase !== 'spinning') return;
+    setSpinPhase('stopping');
 
     try {
-      // Execute the draw API call
       const response = await fetch('/api/draw', {
         method: 'POST',
         headers: { 'x-admin-passcode': adminPasscode }
@@ -204,55 +275,58 @@ export default function RaffleRoulette({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Hindi matapos ang draw.');
 
-      // Calculate winning ticket's segment
       const winningTicket = data.winner.ticket;
-      let winningIndex = displayItems.findIndex((item) => item.ticket === winningTicket);
-      if (winningIndex === -1) winningIndex = 0;
+      let winningIndex = baseDisplayItems.findIndex((item) => item.ticket === winningTicket);
+      if (winningIndex === -1) {
+        winningIndex = 0;
+        setWinningSliceOverride(data.winner);
+      }
 
-      // Realistic Physics: 6 to 9 full spins + exact target angle to pointer at 12 o'clock
-      const fullSpins = 360 * 7; // 7 full rotations
-      const targetSegmentAngle = winningIndex * sliceAngle + sliceAngle / 2;
-      // Wheel spins clockwise, indicator is at top (270 deg / -90 deg)
-      const targetRotation = rotation + fullSpins + (360 - targetSegmentAngle);
+      // Stop continuous spin loop and smoothly decelerate onto 12 o'clock pointer (270 deg in SVG)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
-      // Play audio ticks during acceleration and deceleration
-      let tickCount = 0;
-      const totalTicks = 45;
-      const startSpinTime = Date.now();
-      const spinDuration = 4500; // 4.5 seconds
+      const currentSliceAngle = baseDisplayItems.length > 0 ? 360 / baseDisplayItems.length : 360;
+      const targetSegmentAngle = winningIndex * currentSliceAngle + currentSliceAngle / 2;
+      const desiredMod = ((270 - targetSegmentAngle) % 360 + 360) % 360;
+      const startAngle = rotationRef.current;
+      const currentMod = ((startAngle % 360) + 360) % 360;
+      const alignDelta = (desiredMod - currentMod + 360) % 360;
+      const totalDelta = 360 * 4 + alignDelta; // 4 full dramatic slow-down turns
+      const finalAngle = startAngle + totalDelta;
+      const decelDuration = 4000; // 4 seconds smooth ease-out stop
+      const startTime = performance.now();
 
-      const tickInterval = setInterval(() => {
-        const elapsed = Date.now() - startSpinTime;
-        if (elapsed >= spinDuration) {
-          clearInterval(tickInterval);
+      const decelerateFrame = (now) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / decelDuration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+        const angle = startAngle + totalDelta * eased;
+        const pitch = 1.1 - progress * 0.35;
+        applyWheelAngle(angle, pitch);
+
+        if (progress < 1) {
+          rafRef.current = requestAnimationFrame(decelerateFrame);
         } else {
-          // Play click sound
-          const progress = elapsed / spinDuration;
-          const pitch = 1.2 - progress * 0.4;
-          sfx.playTick(pitch);
-          tickCount++;
+          rafRef.current = null;
+          setRotation(finalAngle);
+          setSpinPhase('idle');
+          setCurrentWinner(data);
+          setShowCelebration(true);
+          sfx.playFanfare();
+          triggerConfetti();
+
+          if (onDrawComplete) {
+            onDrawComplete(data);
+          }
         }
-      }, 95);
+      };
 
-      // Trigger visual wheel rotation
-      setRotation(targetRotation);
-
-      // When rotation completes
-      setTimeout(() => {
-        clearInterval(tickInterval);
-        setIsSpinning(false);
-        setCurrentWinner(data);
-        setShowCelebration(true);
-        sfx.playFanfare();
-        triggerConfetti();
-
-        if (onDrawComplete) {
-          onDrawComplete(data);
-        }
-      }, spinDuration);
-
+      rafRef.current = requestAnimationFrame(decelerateFrame);
     } catch (err) {
-      setIsSpinning(false);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      setRotation(rotationRef.current);
+      setSpinPhase('idle');
       if (onError) onError(err.message || 'May naganap na error sa pag-draw.');
     }
   };
@@ -317,7 +391,10 @@ export default function RaffleRoulette({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border-2 border-amber-300 bg-gradient-to-b from-slate-950 via-blue-950 to-slate-900 p-6 sm:p-8 text-white shadow-2xl">
+    <div className={isLiveMode
+      ? 'fixed inset-0 z-[75] overflow-y-auto bg-gradient-to-b from-slate-950 via-blue-950 to-slate-900 p-4 sm:p-8 text-white'
+      : 'relative overflow-hidden rounded-3xl border-2 border-amber-300 bg-gradient-to-b from-slate-950 via-blue-950 to-slate-900 p-6 sm:p-8 text-white shadow-2xl'
+    }>
       {/* Confetti Overlay Canvas */}
       <canvas
         ref={canvasRef}
@@ -332,10 +409,10 @@ export default function RaffleRoulette({
           </span>
           <div>
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
-              LIVE LOTTO TAMBIOLO &amp; ROLLETA
+              LIVE STL RAFFLE &amp; ROLETTA
             </span>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              Six-Winner Live Raffle Draw
+              STL Six-Winner Live Draw
               <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full bg-red-600 text-white font-extrabold uppercase animate-pulse">
                 <Flame className="w-3.5 h-3.5" /> LIVE
               </span>
@@ -366,6 +443,21 @@ export default function RaffleRoulette({
             <span>{soundEnabled ? 'Audio ON' : 'Muted'}</span>
           </button>
 
+          {/* Live View Presentation Mode Button (Ideal for Messenger GC Screen Share) */}
+          <button
+            type="button"
+            onClick={() => setIsLiveMode(!isLiveMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition ${
+              isLiveMode
+                ? 'border-red-400/50 bg-red-600/80 text-white hover:bg-red-600'
+                : 'border-emerald-400/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+            }`}
+            title="I-fullscreen para malinis ang pag-Share Screen sa Messenger GC"
+          >
+            {isLiveMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span>{isLiveMode ? 'Exit Live View' : 'Live View (Screen Share)'}</span>
+          </button>
+
           <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3.5 py-1.5 text-xs font-bold text-amber-300 flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5" />
             <span>{eligibleEntries.length} Kwalipikadong Entries</span>
@@ -376,14 +468,14 @@ export default function RaffleRoulette({
       {/* Current Round Prize Announcement Banner */}
       <div className="my-6 rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 via-yellow-400/10 to-red-500/20 p-4 text-center">
         <p className="text-xs font-black uppercase tracking-widest text-amber-300">
-          {nextRound ? `Kasalukuyang Bunutan: Draw #${nextRound} of 6` : 'Tapos na ang Lahat ng 6 Draws!'}
+          {nextRound ? `Kasalukuyang STL Bunutan: Draw #${nextRound} of 6` : 'Tapos na ang Lahat ng 6 Draws!'}
         </p>
         <div className="mt-1 flex items-center justify-center gap-2">
           <Gift className="h-6 w-6 text-yellow-300 animate-bounce" />
           <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
             {nextPrize ? (
               <span className={nextRound === 6 ? 'text-amber-300 underline decoration-red-500 font-extrabold' : ''}>
-                {nextPrize.toUpperCase()} {nextRound === 6 ? '★ GRAND FINAL PRIZE ★' : 'COMMUNITY PRIZE'}
+                {nextPrize.toUpperCase()} {nextRound === 6 ? '★ GRAND FINAL PRIZE ★' : 'STL COMMUNITY PRIZE'}
               </span>
             ) : (
               'Lahat ng 6 Premyo ay Matagumpay nang Nabunot'
@@ -392,7 +484,7 @@ export default function RaffleRoulette({
         </div>
       </div>
 
-      {/* MAIN ROULETTE & TAMBIOLO ARENA */}
+      {/* MAIN STL ROLETTA ARENA */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center py-4">
 
         {/* LEFT / CENTER: THE ROULETTE WHEEL */}
@@ -408,16 +500,13 @@ export default function RaffleRoulette({
             {/* Blinking Perimeter Lights */}
             <div className="absolute inset-2 rounded-full border-2 border-dashed border-white/40 pointer-events-none animate-spin-slow" />
 
-            {/* Spinning SVG Roulette Wheel */}
+            {/* Spinning SVG Roulette Wheel (60fps requestAnimationFrame driven) */}
             <div
               ref={wheelRef}
               style={{
-                transform: `rotate(${rotation}deg)`,
-                transition: isSpinning
-                  ? 'transform 4.5s cubic-bezier(0.12, 0.95, 0.22, 1)'
-                  : 'none'
+                transform: `rotate(${isSpinning ? rotationRef.current : rotation}deg)`
               }}
-              className="relative w-72 h-72 sm:w-96 sm:h-96 rounded-full overflow-hidden shadow-2xl border-4 border-slate-950"
+              className="relative w-72 h-72 sm:w-96 sm:h-96 rounded-full overflow-hidden shadow-2xl border-4 border-slate-950 will-change-transform"
             >
               <svg viewBox="0 0 400 400" className="w-full h-full">
                 {displayItems.length > 0 ? (
@@ -476,36 +565,59 @@ export default function RaffleRoulette({
             </div>
           </div>
 
-          {/* Action Button: Paikutin ang Rolleta */}
-          <div className="mt-8">
-            <button
-              type="button"
-              onClick={handleStartDraw}
-              disabled={isSpinning || !nextRound || eligibleEntries.length === 0}
-              className={`inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base sm:text-lg font-black uppercase tracking-wider shadow-2xl transition transform active:scale-95 ${isSpinning
-                  ? 'bg-amber-600 text-white cursor-not-allowed animate-pulse'
-                  : nextRound && eligibleEntries.length > 0
+          {/* Admin Spin & Stop Action Controls */}
+          <div className="mt-8 flex flex-col items-center gap-2.5">
+            {spinPhase === 'spinning' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleStopDraw}
+                  className="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base sm:text-lg font-black uppercase tracking-wider bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 hover:brightness-110 text-white shadow-[0_0_35px_rgba(239,68,68,0.75)] transition transform hover:scale-105 active:scale-95 animate-pulse"
+                >
+                  <Square className="w-5 h-5 fill-white" />
+                  <span>Ihinto ang Roletta! (Stop &amp; Bunot)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelSpin}
+                  className="text-xs font-semibold text-slate-300 hover:text-white underline transition"
+                >
+                  Kanselahin ang pag-ikot
+                </button>
+              </>
+            ) : spinPhase === 'stopping' ? (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base sm:text-lg font-black uppercase tracking-wider bg-amber-600 text-white cursor-not-allowed shadow-2xl animate-pulse"
+              >
+                <RotateCcw className="w-6 h-6 animate-spin text-white" />
+                <span>Pinipigilan… Humanda na!</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartDraw}
+                disabled={!nextRound || eligibleEntries.length === 0}
+                className={`inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base sm:text-lg font-black uppercase tracking-wider shadow-2xl transition transform active:scale-95 ${
+                  nextRound && eligibleEntries.length > 0
                     ? 'bg-gradient-to-r from-red-600 via-amber-500 to-yellow-400 hover:brightness-110 text-slate-950 hover:scale-105 shadow-[0_0_30px_rgba(245,158,11,0.6)]'
                     : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 }`}
-            >
-              {isSpinning ? (
-                <>
-                  <RotateCcw className="w-6 h-6 animate-spin text-white" />
-                  Umiikot ang Rolleta...
-                </>
-              ) : nextRound ? (
-                <>
-                  <Sparkles className="w-6 h-6 text-red-950" />
-                  Paikutin ang Rolleta (Draw #{nextRound})
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-6 h-6" />
-                  Lahat ng Draw ay Kumpleto Na
-                </>
-              )}
-            </button>
+              >
+                {nextRound ? (
+                  <>
+                    <Sparkles className="w-6 h-6 text-red-950" />
+                    <span>Paikutin ang Roletta (Draw #{nextRound})</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-6 h-6" />
+                    <span>Lahat ng Draw ay Kumpleto Na</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -542,7 +654,11 @@ export default function RaffleRoulette({
                   </div>
                   <div>
                     <p className="text-slate-400">Contact Number:</p>
-                    <p className="font-bold text-white">{currentWinner.winner.contact}</p>
+                    <p className="font-bold text-white">
+                      {isLiveMode && currentWinner.winner.contact?.length >= 5
+                        ? `${currentWinner.winner.contact.slice(0, 2)}••••••${currentWinner.winner.contact.slice(-3)}`
+                        : currentWinner.winner.contact}
+                    </p>
                   </div>
                   <div>
                     <p className="text-slate-400">Agent Username:</p>
