@@ -943,6 +943,15 @@ app.get('/api/draw/announce', asyncRoute(async (req, res) => {
       round,
       prize: round === 6 ? '25 kg rice' : '5 kg rice'
     });
+  } else if (kind === 'adlib') {
+    const adlibIndex = Number(req.query.index);
+    if (!Number.isInteger(adlibIndex) || adlibIndex < 0) {
+      return res.status(400).json({ success: false, error: 'Invalid ad-lib.' });
+    }
+    announcementText = buildAnnouncementText({ kind: 'adlib', adlibIndex });
+    if (!announcementText) {
+      return res.status(400).json({ success: false, error: 'Invalid ad-lib.' });
+    }
   } else if (kind === 'complete') {
     announcementText = buildAnnouncementText({ kind: 'complete' });
   } else if (kind === 'winner') {
@@ -972,7 +981,9 @@ app.get('/api/draw/announce', asyncRoute(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid announcement kind.' });
   }
 
-  const audioBuffer = await synthesizeAnnouncementAudio(announcementText, gender);
+  const audioBuffer = await synthesizeAnnouncementAudio(announcementText, gender, {
+    preferElevenLabs: kind === 'adlib'
+  });
   if (!audioBuffer) {
     res.set('Cache-Control', 'no-store');
     return res.json({ success: true, mode: 'browser', text: announcementText });

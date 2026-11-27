@@ -95,7 +95,7 @@ export default function RaffleRoulette({
     if (spinPhase === 'spinning' && soundEnabled && voiceEnabled) {
       resetAdlibPool();
       const scheduleNext = () => {
-        const delay = Math.random() * 8000 + 12000; // 12–20s random interval
+        const delay = Math.random() * 4000 + 7000; // 7–11s random interval
         adlibTimerRef.current = setTimeout(async () => {
           if (spinPhase === 'spinning') {
             await playSpinAdlib(voiceGender);
@@ -103,13 +103,13 @@ export default function RaffleRoulette({
           }
         }, delay);
       };
-      // First ad-lib after 10 seconds
+      // Start the first ad-lib shortly after the wheel begins spinning.
       adlibTimerRef.current = setTimeout(async () => {
         if (spinPhase === 'spinning') {
           await playSpinAdlib(voiceGender);
           scheduleNext();
         }
-      }, 10000);
+      }, 4000);
     } else {
       if (adlibTimerRef.current) {
         clearTimeout(adlibTimerRef.current);

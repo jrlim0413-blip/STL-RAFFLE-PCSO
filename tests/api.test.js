@@ -46,6 +46,9 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
   };
   delete childEnv.SUPABASE_URL;
   delete childEnv.SUPABASE_SERVICE_ROLE_KEY;
+  delete childEnv.GOOGLE_TTS_API_KEY;
+  delete childEnv.AZURE_SPEECH_KEY;
+  delete childEnv.ELEVENLABS_API_KEY;
 
   const server = spawn(process.execPath, ['server.js'], { cwd: root, env: childEnv });
   const serverClosed = new Promise((resolve) => server.once('close', resolve));
@@ -69,6 +72,14 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       }
     }
     assert.equal(ready, true, `API did not start:\n${output}`);
+
+    const adlibResponse = await fetch(`${baseUrl}/api/draw/announce?kind=adlib&index=0`);
+    assert.equal(adlibResponse.status, 200);
+    const adlibData = await adlibResponse.json();
+    assert.equal(adlibData.mode, 'browser');
+    assert.match(adlibData.text, /Sino kaya ang maswerte ngayon/);
+    const invalidAdlibResponse = await fetch(`${baseUrl}/api/draw/announce?kind=adlib&index=30`);
+    assert.equal(invalidAdlibResponse.status, 400);
 
     const settingsResponse = await fetch(`${baseUrl}/api/settings`);
     const settings = await settingsResponse.json();
@@ -572,5 +583,46 @@ test('AI announcer detects ElevenLabs no-card option and synthesizes Flash v2.5 
     else process.env.AZURE_SPEECH_KEY = prevAzure;
     if (prevEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
     else process.env.ELEVENLABS_API_KEY = prevEleven;
+  }
+});
+
+test('spin ad-libs prefer ElevenLabs when configured alongside other providers', async () => {
+  const { synthesizeAnnouncementAudio } = await import('../lib/aiAnnouncer.js');
+  const previousKeys = {
+    google: process.env.GOOGLE_TTS_API_KEY,
+    azure: process.env.AZURE_SPEECH_KEY,
+    eleven: process.env.ELEVENLABS_API_KEY
+  };
+  const originalFetch = globalThis.fetch;
+  try {
+    process.env.GOOGLE_TTS_API_KEY = 'google-test-key';
+    process.env.AZURE_SPEECH_KEY = 'azure-test-key';
+    process.env.ELEVENLABS_API_KEY = 'xi-test-preferred-key';
+
+    let capturedRequest;
+    globalThis.fetch = async (url, init) => {
+      capturedRequest = { url, init };
+      return new Response(Buffer.from('ID3-preferred-elevenlabs'), {
+        status: 200,
+        headers: { 'Content-Type': 'audio/mpeg' }
+      });
+    };
+
+    const audio = await synthesizeAnnouncementAudio(
+      'Unique spin ad-lib for ElevenLabs preference test.',
+      'male',
+      { preferElevenLabs: true }
+    );
+    assert.equal(audio.toString(), 'ID3-preferred-elevenlabs');
+    assert.match(capturedRequest.url, /^https:\/\/api\.elevenlabs\.io\/v1\/text-to-speech\//);
+    assert.equal(capturedRequest.init.headers['xi-api-key'], 'xi-test-preferred-key');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKeys.google === undefined) delete process.env.GOOGLE_TTS_API_KEY;
+    else process.env.GOOGLE_TTS_API_KEY = previousKeys.google;
+    if (previousKeys.azure === undefined) delete process.env.AZURE_SPEECH_KEY;
+    else process.env.AZURE_SPEECH_KEY = previousKeys.azure;
+    if (previousKeys.eleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = previousKeys.eleven;
   }
 });
