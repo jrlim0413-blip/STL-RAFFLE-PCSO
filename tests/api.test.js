@@ -326,6 +326,23 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       '5 kg rice', '5 kg rice', '25 kg rice'
     ]);
 
+    const resetDrawResponse = await fetch(`${baseUrl}/api/draw/reset`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: 'Batch 1 Test' })
+    });
+    assert.equal(resetDrawResponse.status, 200);
+    const resetData = await resetDrawResponse.json();
+    assert.equal(resetData.nextRound, 1);
+    assert.equal(resetData.results.length, 0);
+    assert.equal(resetData.archived.totalWinners, 6);
+
+    const historyResponse = await fetch(`${baseUrl}/api/draw/history`, { headers });
+    assert.equal(historyResponse.status, 200);
+    const historyData = await historyResponse.json();
+    assert.equal(historyData.history.length, 1);
+    assert.equal(historyData.history[0].results.length, 6);
+
     const csvResponse = await fetch(`${baseUrl}/api/export`, { headers });
     assert.equal(csvResponse.status, 200);
     const csv = await csvResponse.text();

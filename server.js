@@ -15,6 +15,7 @@ import {
   listEntries,
   listTaskCompletions,
   proofExists,
+  resetDraw,
   saveSettings,
   toggleEntry,
   uploadProof
@@ -708,6 +709,47 @@ app.get('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
 app.post('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
   const result = await drawNext();
   res.json({ success: true, ...result });
+}));
+
+app.post('/api/draw/reset', requireAdmin, asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  const note = typeof body.note === 'string' ? body.note : '';
+  const result = await resetDraw(note);
+  res.json({ success: true, ...result });
+}));
+
+app.get('/api/draw/history', requireAdmin, asyncRoute(async (req, res) => {
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  res.json({ success: true, history: settings.drawHistory || [] });
+}));
+
+app.get('/api/draw/export-winners', requireAdmin, asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const draw = await getDraw();
+  const results = Array.isArray(draw.results) ? draw.results : [];
+  const rows = [
+    ['Round', 'Prize', 'Winning Ticket', 'Last 6', 'Participant Name', 'Contact Number', 'Agent Username', 'Supervisor', 'Drawn At']
+  ];
+  for (const item of results) {
+    const w = item.winner || {};
+    rows.push([
+      `Round ${item.round}`,
+      item.prize || '',
+      w.ticket || '',
+      w.ticket ? w.ticket.slice(-6) : '',
+      w.agent || '',
+      w.contact || '',
+      w.agentUsername || '',
+      w.supervisorName || '',
+      item.drawnAt || ''
+    ]);
+  }
+  const csv = rows
+    .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename=raffle-winners-${new Date().toISOString().slice(0, 10)}.csv`);
+  res.send(csv);
 }));
 
 app.get('/api/export', requireAdmin, asyncRoute(async (req, res) => {

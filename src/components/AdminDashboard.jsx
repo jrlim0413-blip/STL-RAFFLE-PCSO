@@ -1,9 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { Award, Check, CheckCircle2, Copy, Download, ExternalLink, Loader2, Pencil, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Trash2, Users } from 'lucide-react';
+import { Award, Check, CheckCircle2, Clock, Copy, Download, ExternalLink, FileText, Loader2, Pencil, QrCode, RotateCcw, Search, Settings, Share2, Sparkles, Trash2, Trophy, Users } from 'lucide-react';
 import { readApiResponse } from '../utils/apiResponse';
 import { fromManilaDateTimeInput, toManilaDateTimeInput } from '../utils/entrySchedule';
 import ShareModal from './ShareModal';
 import RaffleRoulette from './RaffleRoulette';
+
+function formatProofLabel(pageKey) {
+  if (!pageKey) return 'Proof';
+  if (pageKey === 'melquiades') return 'Mel Robles';
+  if (pageKey === 'pcso') return 'PCSO';
+  if (pageKey === 'situation-report') return 'SitRep';
+  if (pageKey.startsWith('task_')) {
+    const clean = pageKey.replace('_', ' ').replace('engagement', '').trim();
+    return clean.toUpperCase();
+  }
+  return pageKey.replace('engagement', '').trim();
+}
 
 function settingsDraft(source) {
   return {
@@ -197,6 +209,25 @@ export default function AdminDashboard({
     } catch (deleteError) {
       setError(deleteError.message || 'Could not delete engagement task.');
     }
+  };
+
+  const handleDrawReset = (resetData) => {
+    setWinner(null);
+    setDrawResults([]);
+    setNextRound(1);
+    setNextPrize('5 kg rice');
+    if (resetData?.archived) {
+      fetch('/api/settings', { headers: { 'x-admin-passcode': adminPasscode } })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.settings) {
+            setSettings(settingsDraft(data.settings));
+            onSettingsChange(data.settings);
+          }
+        })
+        .catch(() => {});
+    }
+    onRefresh();
   };
 
   const getPublicBaseUrl = () => {
@@ -797,138 +828,293 @@ export default function AdminDashboard({
             setNextPrize(winnerData.nextPrize);
             onRefresh();
           }}
+          onResetDraw={handleDrawReset}
           onError={(err) => setError(err)}
         />
       </section>
 
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-        <div className="p-5 flex flex-wrap items-center justify-between gap-3 border-b">
+      {/* DRAW HISTORY ARCHIVES SECTION */}
+      {Array.isArray(settings.drawHistory) && settings.drawHistory.length > 0 && (
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div>
+              <h2 className="font-black text-lg flex items-center gap-2 text-slate-900">
+                <Trophy className="w-5 h-5 text-amber-500" />
+                <span>Kasaysayan ng mga Nakaraang Draw (Draw History Archive)</span>
+                <span className="text-xs bg-amber-100 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full border border-amber-300">
+                  {settings.drawHistory.length} {settings.drawHistory.length === 1 ? 'Batch' : 'Batches'}
+                </span>
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Ligtas na naka-archive ang mga nakaraang draw rounds upang magkaroon kayo ng permanenteng talaan ng mga nanalo bawat draw batch.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {settings.drawHistory.map((batch, index) => (
+              <details key={batch.id || index} className="group rounded-xl border border-slate-200 bg-slate-50/70 overflow-hidden">
+                <summary className="flex cursor-pointer items-center justify-between p-4 font-bold text-slate-800 hover:bg-slate-100/70 transition select-none">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500 text-xs font-black text-slate-950">
+                      #{batch.batchNumber || index + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-extrabold text-slate-900">{batch.note || `Draw Batch #${batch.batchNumber || index + 1}`}</p>
+                      <p className="text-[11px] font-normal text-slate-500">
+                        Petsa: {batch.savedAt ? new Date(batch.savedAt).toLocaleString('en-PH') : '—'} • {batch.totalWinners || batch.results?.length || 0} Nanalo
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-blue-700 font-semibold group-open:rotate-180 transition-transform">
+                    ▼
+                  </span>
+                </summary>
+
+                <div className="border-t border-slate-200 bg-white p-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[650px]">
+                      <thead className="bg-slate-100/80 text-slate-600 font-black uppercase text-[10px] tracking-wider">
+                        <tr>
+                          <th className="p-2.5">Round</th>
+                          <th className="p-2.5">Premyo</th>
+                          <th className="p-2.5">Ticket Code</th>
+                          <th className="p-2.5">Huling 6</th>
+                          <th className="p-2.5">Pangalan</th>
+                          <th className="p-2.5">Contact Number</th>
+                          <th className="p-2.5">Supervisor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(batch.results || []).map((res) => (
+                          <tr key={res.round} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-bold text-blue-800">Round {res.round}</td>
+                            <td className="p-2.5 font-extrabold text-amber-700">{res.prize}</td>
+                            <td className="p-2.5 font-mono font-bold text-slate-800">{res.winner?.ticket}</td>
+                            <td className="p-2.5 font-mono font-black text-amber-900 bg-amber-50 px-2 py-0.5 rounded inline-block my-1 border border-amber-200">
+                              {res.winner?.ticket ? res.winner.ticket.slice(-6) : '—'}
+                            </td>
+                            <td className="p-2.5 font-bold text-slate-900">{res.winner?.agent}</td>
+                            <td className="p-2.5 font-mono text-slate-600">{res.winner?.contact}</td>
+                            <td className="p-2.5 text-slate-700">{res.winner?.supervisorName || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ENTRY LIST TABLE SECTION - SPACIOUS, ELEGANT, HIGH READABILITY */}
+      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="p-5 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/50">
           <div>
-            <h2 className="font-black text-lg flex items-center gap-2">
-              Entry list
-              <span className="text-xs bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-full border border-blue-300">
+            <h2 className="font-black text-lg flex items-center gap-2 text-slate-900">
+              <span>Talaan ng mga Kalahok (Entry List)</span>
+              <span className="text-[11px] bg-blue-100 text-blue-800 font-extrabold px-2.5 py-0.5 rounded-full border border-blue-300">
                 Auto-Detection
               </span>
             </h2>
-            <p className="text-sm text-slate-500">Awtomatikong sinusuri kung eligible ang kalahok batay sa pagkumpleto ng lahat ng takdang gawain (tasks).</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Awtomatikong sinusuri kung kwalipikado (eligible) ang kalahok batay sa pagkumpleto ng lahat ng takdang gawain.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={onRefresh}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-sm transition"
               title="I-refresh ang eligibility ng mga kalahok"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Sync Status
+              <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+              <span>Sync Status</span>
             </button>
             <label className="relative">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search entries" className="border rounded-lg pl-9 pr-3 py-2 text-sm" />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Hanapin ang kalahok o ticket…"
+                className="w-48 sm:w-64 rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition shadow-sm"
+              />
             </label>
           </div>
         </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+          <table className="w-full text-left text-xs min-w-[1100px] border-collapse">
+            <thead className="bg-slate-100/80 text-slate-600 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider">
               <tr>
-                <th className="p-3">Ticket</th><th className="p-3">Name</th><th className="p-3">Contact</th>
-                <th className="p-3">Agent username</th><th className="p-3">Supervisor</th>
-                <th className="p-3">Proof reference</th><th className="p-3">Tasks completed</th>
-                <th className="p-3">Status</th><th className="p-3">Action</th>
+                <th className="px-4 py-3.5 w-48">Ticket Number</th>
+                <th className="px-4 py-3.5 w-44">Pangalan (Full Name)</th>
+                <th className="px-4 py-3.5 w-32">Contact Number</th>
+                <th className="px-4 py-3.5 w-32">Agent Username</th>
+                <th className="px-4 py-3.5 w-36">Supervisor</th>
+                <th className="px-4 py-3.5 min-w-[220px]">Mga Patunay (Proofs)</th>
+                <th className="px-4 py-3.5 w-24 text-center">Tasks</th>
+                <th className="px-4 py-3.5 w-32 text-center">Status</th>
+                <th className="px-4 py-3.5 w-44 text-right pr-6">Aksyon</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-slate-100 bg-white">
               {filteredEntries.length ? filteredEntries.map((entry) => {
                 const totalTasks = entry.totalTasks ?? 0;
                 const tasksCompleted = entry.tasksCompleted ?? 0;
                 const isAllTasksDone = totalTasks > 0 && tasksCompleted >= totalTasks;
                 const isPendingTasks = totalTasks > 0 && tasksCompleted < totalTasks;
 
+                const pageProofs = entry.proofs || [];
+                const taskProofs = entry.engagementProofs || [];
+
                 return (
-                  <tr key={entry.ticket}>
-                    <td className="p-3">
-                      <span className="font-mono font-bold text-blue-700 block">{entry.ticket}</span>
-                      <span className="text-[11px] text-slate-500 font-mono">
-                        Huling 6: <strong className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded">{entry.ticket.slice(-6)}</strong>
+                  <tr key={entry.ticket} className="hover:bg-blue-50/40 transition-colors">
+                    {/* Ticket */}
+                    <td className="px-4 py-3.5 align-middle">
+                      <span className="font-mono font-bold text-blue-900 bg-blue-50/80 border border-blue-200/90 px-2 py-0.5 rounded text-xs inline-block">
+                        {entry.ticket}
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-mono block mt-1">
+                        Huling 6: <strong className="text-slate-800 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded font-black">{entry.ticket.slice(-6)}</strong>
                       </span>
                     </td>
-                    <td className="p-3">{entry.agent}</td>
-                    <td className="p-3">{entry.contact}</td>
-                    <td className="p-3">{entry.agentUsername || '—'}</td>
-                    <td className="p-3">{entry.supervisorName || '—'}</td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-2">
-                        {[...(entry.proofs || []), ...(entry.engagementProofs || [])].map((proof) => (
+
+                    {/* Full Name */}
+                    <td className="px-4 py-3.5 align-middle font-bold text-slate-900 text-sm">
+                      {entry.agent}
+                    </td>
+
+                    {/* Contact */}
+                    <td className="px-4 py-3.5 align-middle font-mono text-xs text-slate-600">
+                      {entry.contact}
+                    </td>
+
+                    {/* Agent Username */}
+                    <td className="px-4 py-3.5 align-middle">
+                      {entry.agentUsername ? (
+                        <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-block">
+                          {entry.agentUsername}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+
+                    {/* Supervisor */}
+                    <td className="px-4 py-3.5 align-middle font-semibold text-slate-800 text-xs">
+                      {entry.supervisorName || '—'}
+                    </td>
+
+                    {/* Proof Reference */}
+                    <td className="px-4 py-3.5 align-middle">
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        {pageProofs.map((proof) => (
                           <button
                             key={proof.filename}
                             type="button"
                             onClick={() => viewProof(proof)}
-                            className="text-blue-700 font-bold hover:underline"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[11px] font-semibold text-blue-800 transition"
+                            title={`Tingnan ang patunay para sa ${formatProofLabel(proof.pageKey)}`}
                           >
-                            {proof.pageKey}
+                            <FileText className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span>{formatProofLabel(proof.pageKey)}</span>
                           </button>
                         ))}
-                        {!entry.proofs?.length && !entry.engagementProofs?.length && '—'}
+                        {taskProofs.map((proof) => (
+                          <button
+                            key={proof.filename}
+                            type="button"
+                            onClick={() => viewProof(proof)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[11px] font-semibold text-purple-800 transition"
+                            title={`Tingnan ang patunay para sa ${formatProofLabel(proof.pageKey)}`}
+                          >
+                            <Sparkles className="w-3 h-3 text-purple-600 shrink-0" />
+                            <span>{formatProofLabel(proof.pageKey)}</span>
+                          </button>
+                        ))}
+                        {!pageProofs.length && !taskProofs.length && (
+                          <span className="text-slate-400 italic">Walang patunay</span>
+                        )}
                       </div>
                     </td>
-                    <td className="p-3 font-semibold">{tasksCompleted}/{totalTasks}</td>
-                    <td className="p-3">
+
+                    {/* Tasks Completed */}
+                    <td className="px-4 py-3.5 align-middle text-center">
+                      <span className={`inline-flex items-center justify-center font-mono text-xs font-black px-2.5 py-0.5 rounded-full border ${
+                        isAllTasksDone
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : isPendingTasks
+                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}>
+                        {tasksCompleted}/{totalTasks}
+                      </span>
+                    </td>
+
+                    {/* Status Badge */}
+                    <td className="px-4 py-3.5 align-middle text-center whitespace-nowrap">
                       {isAllTasksDone ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Eligible
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Eligible</span>
                         </span>
                       ) : isPendingTasks ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm">
-                          Kulang sa Task ({tasksCompleted}/{totalTasks})
+                          <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>Kulang sa Task</span>
                         </span>
                       ) : entry.status === 'Eligible' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                          Eligible
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                          <span>Eligible</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
-                          Pending Review
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                          <span>Pending Review</span>
                         </span>
                       )}
                     </td>
-                    <td className="p-3">
+
+                    {/* Action */}
+                    <td className="px-4 py-3.5 align-middle whitespace-nowrap text-right pr-6">
                       {isAllTasksDone ? (
-                        <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Kumpleto ({tasksCompleted}/{totalTasks})
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Kumpleto ({tasksCompleted}/{totalTasks})
                           </span>
                           <button
                             type="button"
                             onClick={() => toggleStatus(entry.ticket)}
-                            className="block text-[11px] text-slate-500 hover:text-slate-800 underline"
+                            className="text-[11px] font-medium text-slate-400 hover:text-slate-800 underline transition"
                             title="I-manual override ang status kung kailangan"
                           >
                             Manual Override
                           </button>
                         </div>
                       ) : isPendingTasks ? (
-                        <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700">
-                            Di pa Tapos ang Lahat ng Task
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            Kulang ({tasksCompleted}/{totalTasks})
                           </span>
                           <button
                             type="button"
                             onClick={() => toggleStatus(entry.ticket)}
-                            className="block text-[11px] text-blue-700 font-semibold hover:underline"
+                            className="text-[11px] text-blue-700 font-bold hover:underline transition"
                           >
                             {entry.status === 'Eligible' ? 'Mark for review' : 'Force eligible'}
                           </button>
                         </div>
                       ) : (
-                        <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-600">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[11px] font-semibold text-slate-500">
                             {entry.status === 'Eligible' ? 'Kwalipikado' : 'For Review'}
                           </span>
                           <button
                             type="button"
                             onClick={() => toggleStatus(entry.ticket)}
-                            className="block text-[11px] text-blue-700 font-semibold hover:underline"
+                            className="text-[11px] text-blue-700 font-bold hover:underline transition"
                           >
                             {entry.status === 'Eligible' ? 'Mark for review' : 'Force eligible'}
                           </button>
@@ -938,7 +1124,11 @@ export default function AdminDashboard({
                   </tr>
                 );
               }) : (
-                <tr><td className="p-6 text-center text-slate-500" colSpan="9">No entries found.</td></tr>
+                <tr>
+                  <td className="px-4 py-10 text-center text-slate-500 font-medium" colSpan="9">
+                    Walang natagpuang entries na tumutugma sa inyong paghahanap.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
