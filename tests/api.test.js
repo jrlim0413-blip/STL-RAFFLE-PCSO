@@ -17,7 +17,7 @@ const proofPages = ['melquiades', 'pcso', 'situation-report'];
 test('Vercel routes /live through the live page handler', () => {
   const vercelConfig = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const liveRewrite = vercelConfig.rewrites.find((rewrite) => rewrite.source === '/live');
-  assert.equal(liveRewrite?.destination, '/api/live-og.js');
+  assert.equal(liveRewrite?.destination, '/api/live-og');
 });
 
 test('HTML 404 API responses produce a useful message instead of a JSON parse error', async () => {

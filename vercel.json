@@ -22,7 +22,7 @@
     },
     {
       "source": "/live",
-      "destination": "/api/live-og.js"
+      "destination": "/api/live-og"
     },
     {
       "source": "/admin",
