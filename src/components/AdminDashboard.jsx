@@ -11,7 +11,13 @@ function formatProofLabel(pageKey) {
   if (pageKey === 'pcso') return 'PCSO';
   if (pageKey === 'situation-report') return 'SitRep';
   if (pageKey.startsWith('task_')) {
-    const clean = pageKey.replace('_', ' ').replace('engagement', '').trim();
+    const clean = pageKey.replace('_', ' ').replace(/\bengagement\b/i, '').trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 3) {
+      const taskLabel = `${parts[0].charAt(0).toUpperCase()}${parts[0].slice(1)} ${parts[1]}`;
+      const actionLabel = parts[2].charAt(0).toUpperCase() + parts[2].slice(1);
+      return `${taskLabel} • ${actionLabel}`;
+    }
     return clean.toUpperCase();
   }
   return pageKey.replace('engagement', '').trim();
@@ -1248,7 +1254,7 @@ export default function AdminDashboard({
         >
           <div className="bg-white rounded-xl p-3 max-w-4xl max-h-[90vh]" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-4 mb-2">
-              <p className="font-bold">{activeProof.pageKey} proof</p>
+              <p className="font-bold">{formatProofLabel(activeProof.pageKey)} proof</p>
               <button type="button" onClick={closeProof} className="text-sm font-bold text-blue-700">Close</button>
             </div>
             <img src={activeProof.url} alt={`${activeProof.pageKey} screenshot proof`} className="max-w-full max-h-[80vh] object-contain" />

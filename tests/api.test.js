@@ -215,6 +215,7 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const privateProofResponse = await fetch(`${baseUrl}/api/proofs/${uploads[0].filename}`);
     assert.equal(privateProofResponse.status, 401);
 
+    const createdTickets = [];
     for (let index = 0; index < 6; index += 1) {
       const response = await fetch(`${baseUrl}/api/submit`, {
         method: 'POST',
@@ -229,6 +230,7 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
         })
       });
       assert.equal(response.status, 201);
+      createdTickets.push((await response.json()).ticket.ticket);
     }
 
     const duplicateEntry = await fetch(`${baseUrl}/api/submit`, {
@@ -283,6 +285,44 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     });
     assert.equal(duplicateTaskCompletion.status, 409);
 
+    // Test 3-proof upload requirement (React, Comment, Share) for participant 1 using ticketOnly
+    const ticket1 = createdTickets[1];
+    const actionUploads = [];
+    for (const actionKey of ['react', 'comment', 'share']) {
+      const upRes = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/proof`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'image/png',
+          'x-entry-reference': ticket1
+        },
+        body: png
+      });
+      assert.equal(upRes.status, 201);
+      actionUploads.push({ actionKey, ...(await upRes.json()) });
+    }
+
+    const partialProofSubmission = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reference: ticket1,
+        proofs: actionUploads.slice(0, 2),
+        ticketOnly: true
+      })
+    });
+    assert.equal(partialProofSubmission.status, 400);
+
+    const fullThreeProofSubmission = await fetch(`${baseUrl}/api/tasks/${taskData.task.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reference: ticket1,
+        proofs: actionUploads,
+        ticketOnly: true
+      })
+    });
+    assert.equal(fullThreeProofSubmission.status, 201);
+
     const entriesResponse = await fetch(`${baseUrl}/api/entries`, { headers });
     const entriesResult = await entriesResponse.json();
     const entries = entriesResult.data;
@@ -295,6 +335,14 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     assert.equal(participant.totalTasks, 1);
     assert.equal(participant.engagementProofs.length, 1);
     assert.equal(participant.engagementProofs[0].filename, proof.filename);
+
+    const participant1 = entries.find((entry) => entry.ticket === ticket1);
+    assert.equal(participant1.tasksCompleted, 1);
+    assert.equal(participant1.engagementProofs.length, 3);
+    assert.deepEqual(
+      participant1.engagementProofs.map((item) => item.pageKey),
+      ['task_01 react', 'task_01 comment', 'task_01 share']
+    );
     const tickets = entries.map((entry) => entry.ticket);
     assert.equal(new Set(tickets).size, entries.length);
     for (const ticket of tickets) assert.match(ticket, /^STL-\d{8}-\d{6}$/);

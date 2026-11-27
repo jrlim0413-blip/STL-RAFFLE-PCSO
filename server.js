@@ -32,6 +32,7 @@ const MAX_PROOF_SIZE = 4 * 1024 * 1024;
 const ADMIN_AUTH_WINDOW_MS = 15 * 60 * 1000;
 const ADMIN_AUTH_MAX_FAILURES = 5;
 const PROOF_PAGES = new Set(['melquiades', 'pcso', 'situation-report']);
+const TASK_ACTIONS = new Set(['react', 'comment', 'share']);
 const adminAuthFailures = new Map();
 const IMAGE_TYPES = {
   'image/png': { extension: 'png', signature: '89504e470d0a1a0a' },
@@ -481,17 +482,54 @@ app.post('/api/tasks/:taskId/complete', asyncRoute(async (req, res) => {
   if (await getTaskCompletion(resolved.entry.ticket, task.id)) {
     return res.status(409).json({ success: false, error: 'This engagement task has already been submitted for this ticket.' });
   }
-  if (!verifyTaskProof(resolved.entry.ticket, task.id, body.proof)) {
-    return res.status(400).json({ success: false, error: 'The screenshot proof is invalid or expired. Please upload it again.' });
-  }
-  if (!(await proofExists(body.proof.filename))) {
-    return res.status(400).json({ success: false, error: 'The screenshot proof could not be found. Please upload it again.' });
+
+  let proofValueToSave;
+  if (Array.isArray(body.proofs) || ticketOnly) {
+    if (!Array.isArray(body.proofs) || body.proofs.length !== TASK_ACTIONS.size) {
+      return res.status(400).json({
+        success: false,
+        error: 'Kailangang mag-upload ng tatlong (3) screenshot proofs: para sa React, Comment, at Share.'
+      });
+    }
+    const seenActions = new Set();
+    const validatedProofs = [];
+    for (const proof of body.proofs) {
+      if (!proof || !TASK_ACTIONS.has(proof.actionKey) || seenActions.has(proof.actionKey)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Mag-upload ng isang screenshot para sa bawat aksyon: React, Comment, at Share.'
+        });
+      }
+      if (!verifyTaskProof(resolved.entry.ticket, task.id, proof)) {
+        return res.status(400).json({
+          success: false,
+          error: `Ang screenshot proof para sa ${proof.actionKey.toUpperCase()} ay invalid o nag-expire na. Paki-upload muli.`
+        });
+      }
+      if (!(await proofExists(proof.filename))) {
+        return res.status(400).json({
+          success: false,
+          error: `Hindi natagpuan ang screenshot proof para sa ${proof.actionKey.toUpperCase()}. Paki-upload muli.`
+        });
+      }
+      seenActions.add(proof.actionKey);
+      validatedProofs.push({ actionKey: proof.actionKey, filename: proof.filename });
+    }
+    proofValueToSave = validatedProofs;
+  } else {
+    if (!verifyTaskProof(resolved.entry.ticket, task.id, body.proof)) {
+      return res.status(400).json({ success: false, error: 'The screenshot proof is invalid or expired. Please upload it again.' });
+    }
+    if (!(await proofExists(body.proof.filename))) {
+      return res.status(400).json({ success: false, error: 'The screenshot proof could not be found. Please upload it again.' });
+    }
+    proofValueToSave = body.proof.filename;
   }
 
   const completion = await createTaskCompletion(
     resolved.entry.ticket,
     task.id,
-    body.proof.filename
+    proofValueToSave
   );
 
   // Auto-detect: Kwalipikado LAMANG kung natapos ang LAHAT ng takdang tasks
@@ -564,10 +602,15 @@ app.get('/api/entries', requireAdmin, asyncRoute(async (req, res) => {
       tasksCompleted: entryCompletions.length,
       totalTasks,
       isFullyComplete: isCompleted,
-      engagementProofs: entryCompletions.map((completion) => ({
-        filename: completion.proofFilename,
-        pageKey: `${completion.taskId} engagement`
-      }))
+      engagementProofs: entryCompletions.flatMap((completion) => {
+        const proofItems = Array.isArray(completion.proofs) && completion.proofs.length
+          ? completion.proofs
+          : [{ actionKey: 'engagement', filename: completion.proofFilename }];
+        return proofItems.map((item) => ({
+          filename: item.filename,
+          pageKey: `${completion.taskId} ${item.actionKey || 'engagement'}`
+        }));
+      })
     };
   });
   const eligible = entriesWithTaskCounts.filter((entry) => entry.status === 'Eligible').length;
