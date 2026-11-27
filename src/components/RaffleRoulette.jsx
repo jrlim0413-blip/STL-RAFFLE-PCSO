@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  Eye,
   FileText,
   Gift,
   Loader2,
@@ -35,6 +36,7 @@ export default function RaffleRoulette({
   publicLiveUrl = 'https://stl-raffle-campaign.vercel.app/live',
   voiceInfo = null,
   initialVoiceGender = 'male',
+  viewerStats = { activeViewers: 0, totalViewers: 0 },
   adminPasscode,
   onDrawComplete,
   onResetDraw,
@@ -475,6 +477,18 @@ export default function RaffleRoulette({
             >
               {publicLiveUrl || '/live'}
             </a>
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200"
+              title={`Kabuuang agents na nakabukas o sumilip sa live page: ${viewerStats?.totalViewers || 0}`}
+            >
+              <Eye className="w-3 h-3 text-emerald-300" />
+              <span>
+                {viewerStats?.activeViewers || 0} Nanonood Live
+                {(viewerStats?.totalViewers || 0) > (viewerStats?.activeViewers || 0)
+                  ? ` (${viewerStats.totalViewers} Total)`
+                  : ''}
+              </span>
+            </span>
             {voiceInfo?.label ? (
               <span
                 className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${

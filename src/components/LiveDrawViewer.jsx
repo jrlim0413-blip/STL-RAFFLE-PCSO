@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
+  Eye,
   Flame,
   Gift,
   Radio,
@@ -13,7 +14,29 @@ import {
   VolumeX
 } from 'lucide-react';
 import RouletteWheelCanvas from './RouletteWheelCanvas';
-import { launchConfetti, playAnnouncerVoice, sfx, stopAllAnnouncements } from '../utils/raffleAudio';
+import {
+  launchConfetti,
+  playAnnouncerVoice,
+  preloadBrowserVoices,
+  sfx,
+  stopAllAnnouncements,
+  tryUnlockAudio
+} from '../utils/raffleAudio';
+
+function getOrCreateViewerId() {
+  try {
+    let id = sessionStorage.getItem('stl_live_viewer_id');
+    if (!id || !/^[a-zA-Z0-9_-]{8,64}$/.test(id)) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID().replace(/-/g, '')
+        : `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem('stl_live_viewer_id', id);
+    }
+    return id;
+  } catch {
+    return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
 
 /**
  * Public read-only Live Spectator page for agents watching across GCs (/live or ?live=1).
@@ -29,6 +52,7 @@ export default function LiveDrawViewer({ pageSettings }) {
   const [currentWinner, setCurrentWinner] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [winningSliceOverride, setWinningSliceOverride] = useState('');
+  const [viewerStats, setViewerStats] = useState({ activeViewers: 1, totalViewers: 1, viewerEpoch: 'default' });
 
   const canvasRef = useRef(null);
   const wheelRef = useRef(null);
@@ -39,26 +63,157 @@ export default function LiveDrawViewer({ pageSettings }) {
   const spinPhaseRef = useRef('idle');
   const announcedSpinSeqRef = useRef(0);
   const audioConfigRef = useRef({ enabled: true, unlocked: false });
+  const viewerIdRef = useRef(getOrCreateViewerId());
+  const registeredEpochRef = useRef('');
 
   useEffect(() => {
     audioConfigRef.current = { enabled: soundEnabled, unlocked: audioUnlocked };
-    sfx.muted = !soundEnabled || !audioUnlocked;
+    sfx.muted = !soundEnabled;
   }, [soundEnabled, audioUnlocked]);
 
   useEffect(() => {
+    preloadBrowserVoices();
+    tryUnlockAudio().then((allowed) => {
+      if (allowed) {
+        setAudioUnlocked(true);
+      }
+    });
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       stopAllAnnouncements();
     };
   }, []);
 
-  const unlockAudio = () => {
+  const unlockAudio = useCallback((silent = false) => {
     sfx.muted = false;
     sfx.init();
+    if (sfx.ctx && sfx.ctx.state === 'suspended') {
+      sfx.ctx.resume().catch(() => {});
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const primer = new SpeechSynthesisUtterance('');
+        primer.volume = 0;
+        window.speechSynthesis.speak(primer);
+      } catch {
+        // Ignore primer errors
+      }
+    }
     setSoundEnabled(true);
     setAudioUnlocked(true);
-    sfx.playTick(1.1);
-  };
+    if (!silent) {
+      sfx.playTick(1.1);
+    }
+  }, []);
+
+  // Auto-unlock audio on the very first tap/touch/click anywhere on the screen
+  useEffect(() => {
+    if (audioUnlocked || !soundEnabled) return undefined;
+    const handleFirstGesture = () => {
+      unlockAudio(true);
+    };
+    window.addEventListener('pointerdown', handleFirstGesture, { once: true, capture: true, passive: true });
+    window.addEventListener('keydown', handleFirstGesture, { once: true, capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstGesture, { capture: true });
+      window.removeEventListener('keydown', handleFirstGesture, { capture: true });
+    };
+  }, [audioUnlocked, soundEnabled, unlockAudio]);
+
+  // Live viewer heartbeat so Admin & viewers see how many agents are watching
+  useEffect(() => {
+    let active = true;
+    const viewerId = viewerIdRef.current;
+
+    const sendHeartbeat = async (leave = false) => {
+      try {
+        if (leave) {
+          const payload = JSON.stringify({ viewerId, leave: true });
+          if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+            const sent = navigator.sendBeacon(
+              '/api/draw/live-ping',
+              new Blob([payload], { type: 'application/json' })
+            );
+            if (sent) return;
+          }
+          await fetch('/api/draw/live-ping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true
+          });
+          return;
+        }
+
+        const currentEpoch = liveData?.liveState?.viewerEpoch || viewerStats.viewerEpoch || 'default';
+        const firstJoin = registeredEpochRef.current !== currentEpoch;
+        const response = await fetch('/api/draw/live-ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ viewerId, firstJoin })
+        });
+        if (!response.ok || !active) return;
+        const data = await response.json();
+        if (active && data?.success) {
+          registeredEpochRef.current = data.viewerEpoch || currentEpoch;
+          setViewerStats({
+            activeViewers: data.activeViewers ?? 1,
+            totalViewers: data.totalViewers ?? 1,
+            viewerEpoch: data.viewerEpoch || currentEpoch
+          });
+        }
+      } catch {
+        // Ignore transient ping errors
+      }
+    };
+
+    sendHeartbeat(false);
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        sendHeartbeat(false);
+      }
+    }, 18000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        sendHeartbeat(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [liveData?.liveState?.viewerEpoch]);
+
+  // Send leave signal only when actually closing/unmounting the Live Viewer page
+  useEffect(() => {
+    const sendLeave = () => {
+      const payload = JSON.stringify({ viewerId: viewerIdRef.current, leave: true });
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          if (navigator.sendBeacon('/api/draw/live-ping', new Blob([payload], { type: 'application/json' }))) {
+            return;
+          }
+        }
+        fetch('/api/draw/live-ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      } catch {
+        // Ignore cleanup errors
+      }
+    };
+    window.addEventListener('pagehide', sendLeave);
+    return () => {
+      window.removeEventListener('pagehide', sendLeave);
+      sendLeave();
+    };
+  }, []);
 
   const results = liveData?.results || [];
   const liveState = liveData?.liveState || {};
@@ -77,8 +232,11 @@ export default function LiveDrawViewer({ pageSettings }) {
     const sliceIndex = Math.floor(angle / curSliceAngle);
     if (sliceIndex !== lastSliceRef.current) {
       lastSliceRef.current = sliceIndex;
-      if (audioConfigRef.current.enabled && audioConfigRef.current.unlocked) {
+      if (audioConfigRef.current.enabled) {
         sfx.playTick(pitch);
+        if (sfx.ctx?.state === 'running' && !audioConfigRef.current.unlocked) {
+          setAudioUnlocked(true);
+        }
       }
     }
   };
@@ -104,13 +262,15 @@ export default function LiveDrawViewer({ pageSettings }) {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(frameLoop);
 
-    if (stateSnapshot.seq !== announcedSpinSeqRef.current) {
+    if (stateSnapshot.seq !== announcedSpinSeqRef.current && audioConfigRef.current.enabled) {
       announcedSpinSeqRef.current = stateSnapshot.seq;
       playAnnouncerVoice({
         kind: 'spin',
         round: stateSnapshot.round,
         gender: stateSnapshot.voiceGender || 'male',
-        enabled: audioConfigRef.current.enabled && audioConfigRef.current.unlocked
+        enabled: true
+      }).then((res) => {
+        if (res?.played) setAudioUnlocked(true);
       });
     }
   };
@@ -156,7 +316,7 @@ export default function LiveDrawViewer({ pageSettings }) {
         setRotation(finalAngle);
         setCurrentWinner(latestResult);
         setShowCelebration(true);
-        if (audioConfigRef.current.enabled && audioConfigRef.current.unlocked) {
+        if (audioConfigRef.current.enabled) {
           sfx.playFanfare();
           playAnnouncerVoice({
             kind: 'winner',
@@ -164,6 +324,8 @@ export default function LiveDrawViewer({ pageSettings }) {
             ticket: latestResult.winner?.ticket,
             gender: voiceGender || 'male',
             enabled: true
+          }).then((res) => {
+            if (res?.played) setAudioUnlocked(true);
           });
         }
         launchConfetti(canvasRef.current);
@@ -184,6 +346,9 @@ export default function LiveDrawViewer({ pageSettings }) {
 
         setLoadError('');
         setLiveData(data);
+        if (data.viewerStats) {
+          setViewerStats(data.viewerStats);
+        }
 
         const nextResults = data.results || [];
         const nextLive = data.liveState || {};
@@ -256,26 +421,35 @@ export default function LiveDrawViewer({ pageSettings }) {
       <div className="max-w-6xl mx-auto space-y-5">
         {/* Audio Unlock Prompt for Mobile / Messenger Browser */}
         {!audioUnlocked ? (
-          <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-red-500/20 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div
+            onClick={() => unlockAudio(false)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') unlockAudio(false); }}
+            className="cursor-pointer rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-red-500/20 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg hover:brightness-110 transition"
+          >
             <div className="flex items-center gap-3 text-center sm:text-left">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 font-black">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 font-black animate-bounce">
                 <Volume2 className="w-5 h-5" />
               </span>
               <div>
                 <p className="text-sm font-black text-amber-300">
-                  I-tap upang marinig ang Live AI Announcer &amp; Tunog ng Roletta!
+                  I-tap kahit saan sa screen upang marinig ang Live AI Voice &amp; Roletta!
                 </p>
                 <p className="text-xs text-slate-300">
-                  Kailangan ng isang tap sa cellphone o browser upang umandar ang boses habang nanonood.
+                  Naka-mute ng browser ang tunog pagkabukas ng link—isang tap lang sa screen ay aandar na ito agad.
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={unlockAudio}
+              onClick={(e) => {
+                e.stopPropagation();
+                unlockAudio(false);
+              }}
               className="shrink-0 rounded-xl bg-amber-400 hover:bg-amber-300 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md transition transform active:scale-95"
             >
-              I-on ang Boses &amp; Sound
+              I-on Agad 🔊
             </button>
           </div>
         ) : (
@@ -327,6 +501,13 @@ export default function LiveDrawViewer({ pageSettings }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <div
+                className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200 flex items-center gap-1.5"
+                title={`Kabuuang nanood sa draw na ito: ${viewerStats.totalViewers}`}
+              >
+                <Eye className="w-3.5 h-3.5 text-emerald-300" />
+                <span>{viewerStats.activeViewers} Nanonood Live</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setTicketFormat(ticketFormat === 'last6' ? 'full' : 'last6')}

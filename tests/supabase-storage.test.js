@@ -36,6 +36,7 @@ function sendJson(response, status, data) {
 
 test('Supabase entries store full participant details in a private bucket', { timeout: 30000 }, async () => {
   const objects = new Map();
+  const timestamps = new Map();
   const entries = new Map();
   const taskCompletions = new Map();
   let drawResults = [];
@@ -50,6 +51,32 @@ test('Supabase entries store full participant details in a private bucket', { ti
         .filter((name) => name.includes(options.search || ''));
       return sendJson(response, 200, proofNames.map((name) => ({ name })));
     }
+    if (url.pathname === '/storage/v1/object/list/raffle-entries') {
+      const options = JSON.parse((await readBody(request)).toString('utf8'));
+      const prefix = options.prefix ? `${options.prefix.replace(/\/+$/, '')}/` : '';
+      const bucketPrefix = `raffle-entries/${prefix}`;
+      const matched = [...objects.keys()]
+        .filter((key) => key.startsWith(bucketPrefix))
+        .map((key) => {
+          const ts = timestamps.get(key) || new Date().toISOString();
+          return {
+            name: key.slice(bucketPrefix.length),
+            updated_at: ts,
+            created_at: ts
+          };
+        })
+        .filter((item) => item.name && !item.name.includes('/'));
+      return sendJson(response, 200, matched);
+    }
+    if (url.pathname === '/storage/v1/object/raffle-entries' && request.method === 'DELETE') {
+      const options = JSON.parse((await readBody(request)).toString('utf8'));
+      const prefixes = Array.isArray(options.prefixes) ? options.prefixes : [];
+      for (const prefixPath of prefixes) {
+        objects.delete(`raffle-entries/${prefixPath}`);
+        timestamps.delete(`raffle-entries/${prefixPath}`);
+      }
+      return sendJson(response, 200, []);
+    }
 
     if (url.pathname.startsWith('/storage/v1/object/')) {
       const objectPath = decodeURIComponent(url.pathname.slice('/storage/v1/object/'.length));
@@ -62,11 +89,13 @@ test('Supabase entries store full participant details in a private bucket', { ti
       }
       if (request.method === 'DELETE') {
         objects.delete(key);
+        timestamps.delete(key);
         return sendJson(response, 200, []);
       }
       if (request.method === 'POST' || request.method === 'PUT') {
         const content = await readBody(request);
         objects.set(key, content);
+        timestamps.set(key, new Date().toISOString());
         return sendJson(response, 200, { Key: key });
       }
     }
@@ -318,6 +347,26 @@ test('Supabase entries store full participant details in a private bucket', { ti
     assert.equal(drawResponse.status, 200);
     const hydratedDraw = (await drawResponse.json()).results;
     assert.equal(hydratedDraw[0].winner.agent, 'Bucket Test Participant');
+
+    const supaPing = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'supa_agent_001', firstJoin: true })
+    });
+    assert.equal(supaPing.status, 200);
+    const supaPingData = await supaPing.json();
+    assert.equal(supaPingData.activeViewers, 1);
+    assert.equal(supaPingData.totalViewers, 1);
+
+    const supaLeave = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'supa_agent_001', leave: true })
+    });
+    assert.equal(supaLeave.status, 200);
+    const supaLeaveData = await supaLeave.json();
+    assert.equal(supaLeaveData.activeViewers, 0);
+    assert.equal(supaLeaveData.totalViewers, 1);
   } finally {
     if (server.exitCode === null) server.kill();
     await serverClosed;

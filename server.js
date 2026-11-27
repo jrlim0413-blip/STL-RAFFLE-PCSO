@@ -9,12 +9,14 @@ import {
   createTaskCompletion,
   drawNext,
   getDraw,
+  getLiveViewerStats,
   getProof,
   getSettings,
   getTaskCompletion,
   listEntries,
   listTaskCompletions,
   proofExists,
+  recordLiveViewerPing,
   resetDraw,
   saveSettings,
   toggleEntry,
@@ -767,11 +769,13 @@ function sanitizePublicDrawResult(item) {
 app.get('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const [draw, settings] = await Promise.all([getDraw(), getSettings(DEFAULT_SETTINGS)]);
+  const viewerStats = await getLiveViewerStats(settings.liveDrawState?.viewerEpoch || 'default');
   res.json({
     success: true,
     ...draw,
     voiceInfo: getVoiceProviderInfo(),
-    liveState: settings.liveDrawState || null
+    liveState: settings.liveDrawState || null,
+    viewerStats
   });
 }));
 
@@ -877,6 +881,9 @@ app.get('/api/draw/live', asyncRoute(async (req, res) => {
     nextPrize = draw.nextPrize;
   }
 
+  const viewerEpoch = storedLive.viewerEpoch || 'default';
+  const viewerStats = await getLiveViewerStats(viewerEpoch);
+
   res.json({
     success: true,
     campaignName: settings.campaignName || 'STL Community Rice Raffle',
@@ -891,13 +898,29 @@ app.get('/api/draw/live', asyncRoute(async (req, res) => {
       voiceGender: storedLive.voiceGender || 'male',
       wheelTickets: Array.isArray(storedLive.wheelTickets) ? storedLive.wheelTickets : [],
       eligibleCount: storedLive.eligibleCount || 0,
+      viewerEpoch,
       seq: storedLive.seq || 0,
       startedAt: storedLive.startedAt || null,
       updatedAt: storedLive.updatedAt || null
     },
     results,
+    viewerStats,
     voiceInfo: getVoiceProviderInfo()
   });
+}));
+
+app.post('/api/draw/live-ping', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const body = req.body || {};
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  const viewerEpoch = settings.liveDrawState?.viewerEpoch || 'default';
+  const stats = await recordLiveViewerPing({
+    viewerId: body.viewerId,
+    epoch: viewerEpoch,
+    leave: Boolean(body.leave),
+    firstJoin: Boolean(body.firstJoin)
+  });
+  res.json({ success: true, ...stats });
 }));
 
 app.get('/api/draw/announce', asyncRoute(async (req, res) => {

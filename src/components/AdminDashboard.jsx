@@ -69,6 +69,7 @@ export default function AdminDashboard({
   const [exportingKey, setExportingKey] = useState('');
   const [voiceInfo, setVoiceInfo] = useState(null);
   const [initialVoiceGender, setInitialVoiceGender] = useState('male');
+  const [viewerStats, setViewerStats] = useState({ activeViewers: 0, totalViewers: 0 });
 
   useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
@@ -82,6 +83,7 @@ export default function AdminDashboard({
         setNextPrize(data.nextPrize);
         if (data.voiceInfo) setVoiceInfo(data.voiceInfo);
         if (data.liveState?.voiceGender) setInitialVoiceGender(data.liveState.voiceGender);
+        if (data.viewerStats) setViewerStats(data.viewerStats);
         if (data.results?.length) {
           setWinner(data.results[data.results.length - 1]);
           setSpinTicket(data.results[data.results.length - 1].winner.ticket);
@@ -90,7 +92,26 @@ export default function AdminDashboard({
       .catch((drawError) => {
         if (active) setError(drawError.message || 'Could not load draw results.');
       });
-    return () => { active = false; };
+
+    const pollViewerStats = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      try {
+        const res = await fetch('/api/draw/live', { cache: 'no-store' });
+        if (!res.ok || !active) return;
+        const livePayload = await res.json();
+        if (active && livePayload?.viewerStats) {
+          setViewerStats(livePayload.viewerStats);
+        }
+      } catch {
+        // Ignore transient network failures
+      }
+    };
+    const statsTimer = setInterval(pollViewerStats, 4000);
+
+    return () => {
+      active = false;
+      clearInterval(statsTimer);
+    };
   }, [adminPasscode]);
   useEffect(() => () => {
     if (activeProof?.url) URL.revokeObjectURL(activeProof.url);
@@ -906,6 +927,7 @@ export default function AdminDashboard({
           publicLiveUrl={`${getPublicBaseUrl()}/live`}
           voiceInfo={voiceInfo}
           initialVoiceGender={initialVoiceGender}
+          viewerStats={viewerStats}
           adminPasscode={adminPasscode}
           onDrawComplete={(winnerData) => {
             setWinner(winnerData);

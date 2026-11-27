@@ -91,35 +91,125 @@ export function stopAllAnnouncements() {
   }
 }
 
-function speakWithBrowserVoice(text, gender = 'male') {
-  if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+let voicePreloadAttached = false;
+
+export function preloadBrowserVoices() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window) || voicePreloadAttached) return;
+  voicePreloadAttached = true;
   try {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', () => {
+      window.speechSynthesis.getVoices();
+    });
+  } catch {
+    // Ignore browser voice preload errors
+  }
+}
+
+preloadBrowserVoices();
+
+export async function tryUnlockAudio() {
+  preloadBrowserVoices();
+  sfx.muted = false;
+  sfx.init();
+  if (sfx.ctx && sfx.ctx.state === 'suspended') {
+    try {
+      await sfx.ctx.resume();
+    } catch {
+      // Blocked until user interaction
+    }
+  }
+  return !sfx.ctx || sfx.ctx.state === 'running';
+}
+
+function getAvailableVoicesAsync(timeoutMs = 250) {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      resolve([]);
+      return;
+    }
+    const existing = window.speechSynthesis.getVoices() || [];
+    if (existing.length > 0) {
+      resolve(existing);
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.speechSynthesis.removeEventListener?.('voiceschanged', finish);
+      resolve(window.speechSynthesis.getVoices() || []);
+    };
+    window.speechSynthesis.addEventListener?.('voiceschanged', finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+function pickBestBrowserVoice(voices, gender = 'male') {
+  if (!voices.length) return null;
+  const genderHint = gender === 'female'
+    ? /blessica|female|woman|maria|samantha|ava|zira|aria|jenny|alice|rachel|natural/i
+    : /angelo|male|man|guy|daniel|david|ryan|andrew|george|adam|natural/i;
+  const isNatural = (v) => /natural|online|neural|google|enhanced|premium/i.test(v.name || '');
+  const isFilipino = (v) => /^(fil|tl)(-|$)/i.test(v.lang || '') || /filipino|tagalog|blessica|angelo/i.test(v.name || '');
+  const isPhEnglish = (v) => /^en-PH/i.test(v.lang || '');
+
+  const filipinoVoices = voices.filter(isFilipino);
+  const phEnglishVoices = voices.filter(isPhEnglish);
+
+  return filipinoVoices.find((v) => isNatural(v) && genderHint.test(v.name))
+    || filipinoVoices.find(isNatural)
+    || filipinoVoices.find((v) => genderHint.test(v.name))
+    || filipinoVoices[0]
+    || phEnglishVoices.find((v) => isNatural(v) && genderHint.test(v.name))
+    || phEnglishVoices[0]
+    || voices.find((v) => isNatural(v) && genderHint.test(v.name))
+    || voices.find((v) => genderHint.test(v.name))
+    || voices[0];
+}
+
+async function speakWithBrowserVoice(text, gender = 'male') {
+  if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    return { played: false, blocked: false };
+  }
+  try {
+    const voices = await getAvailableVoicesAsync(250);
+    const chosen = pickBestBrowserVoice(voices, gender);
+    const isNativeFilipino = Boolean(
+      chosen && (/^(fil|tl)(-|$)/i.test(chosen.lang || '') || /filipino|tagalog/i.test(chosen.name || ''))
+    );
+    const spokenText = isNativeFilipino
+      ? text.replace(/\bS-T-L\b/g, 'STL')
+      : text.replace(/\bS-T-L\b/g, 'es ti el');
+
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices() || [];
-
-    const filipinoVoices = voices.filter((v) => /fil|tl-PH|en-PH/i.test(v.lang));
-    const pool = filipinoVoices.length ? filipinoVoices : voices;
-    const genderHint = gender === 'female'
-      ? /blessica|female|woman|maria|samantha|ava|zira|aria|jenny|natural/i
-      : /angelo|male|man|guy|daniel|david|ryan|andrew|natural/i;
-
-    const chosen = pool.find((v) => /natural|online|google/i.test(v.name) && genderHint.test(v.name))
-      || pool.find((v) => genderHint.test(v.name))
-      || pool.find((v) => /natural|google/i.test(v.name))
-      || pool[0];
-
+    const utterance = new SpeechSynthesisUtterance(spokenText);
     if (chosen) {
       utterance.voice = chosen;
       utterance.lang = chosen.lang;
     } else {
       utterance.lang = 'fil-PH';
     }
-    utterance.rate = 0.98;
-    utterance.pitch = gender === 'female' ? 1.05 : 0.95;
-    window.speechSynthesis.speak(utterance);
+    utterance.rate = isNativeFilipino ? 0.99 : 0.94;
+    utterance.pitch = gender === 'female' ? 1.06 : 0.94;
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      utterance.onstart = () => finish({ played: true, mode: 'browser', text });
+      utterance.onerror = (event) => {
+        const errCode = event?.error || '';
+        finish({ played: false, blocked: errCode === 'not-allowed' || errCode === 'audio-busy' });
+      };
+      window.speechSynthesis.speak(utterance);
+      setTimeout(() => finish({ played: true, mode: 'browser', text }), 400);
+    });
   } catch {
-    // Ignore browser speech errors
+    return { played: false, blocked: false };
   }
 }
 
@@ -165,14 +255,21 @@ export async function playAnnouncerVoice({
       };
       audio.addEventListener('ended', cleanup, { once: true });
       audio.addEventListener('error', cleanup, { once: true });
-      await audio.play();
-      return { played: true, mode: 'cloud' };
+      try {
+        await audio.play();
+        return { played: true, mode: 'cloud' };
+      } catch (playErr) {
+        cleanup();
+        return {
+          played: false,
+          blocked: playErr?.name === 'NotAllowedError'
+        };
+      }
     }
 
     const data = await response.json();
     if (data?.text) {
-      speakWithBrowserVoice(data.text, gender);
-      return { played: true, mode: 'browser', text: data.text };
+      return await speakWithBrowserVoice(data.text, gender);
     }
   } catch {
     // Autoplay blocked or network error

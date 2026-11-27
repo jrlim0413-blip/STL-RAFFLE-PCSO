@@ -411,6 +411,49 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       assert.equal('proofs' in item.winner, false);
     }
 
+    const badViewerPing = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'bad!' })
+    });
+    assert.equal(badViewerPing.status, 400);
+
+    const pingOne = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'agent_viewer_01', firstJoin: true })
+    });
+    assert.equal(pingOne.status, 200);
+    const pingOneData = await pingOne.json();
+    assert.equal(pingOneData.activeViewers, 1);
+    assert.equal(pingOneData.totalViewers, 1);
+
+    const pingTwo = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'agent_viewer_02', firstJoin: true })
+    });
+    assert.equal(pingTwo.status, 200);
+    const pingTwoData = await pingTwo.json();
+    assert.equal(pingTwoData.activeViewers, 2);
+    assert.equal(pingTwoData.totalViewers, 2);
+
+    const adminDrawWithViewers = await fetch(`${baseUrl}/api/draw`, { headers });
+    assert.equal(adminDrawWithViewers.status, 200);
+    const adminDrawPayload = await adminDrawWithViewers.json();
+    assert.equal(adminDrawPayload.viewerStats.activeViewers, 2);
+    assert.equal(adminDrawPayload.viewerStats.totalViewers, 2);
+
+    const leaveOne = await fetch(`${baseUrl}/api/draw/live-ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewerId: 'agent_viewer_01', leave: true })
+    });
+    assert.equal(leaveOne.status, 200);
+    const leaveOneData = await leaveOne.json();
+    assert.equal(leaveOneData.activeViewers, 1);
+    assert.equal(leaveOneData.totalViewers, 2);
+
     const unauthorizedTestVoice = await fetch(`${baseUrl}/api/draw/announce?kind=test`);
     assert.equal(unauthorizedTestVoice.status, 401);
 
@@ -449,6 +492,8 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const resetLivePayload = await publicLiveAfterReset.json();
     assert.equal(resetLivePayload.liveState.phase, 'idle');
     assert.equal(resetLivePayload.results.length, 0);
+    assert.equal(resetLivePayload.viewerStats.activeViewers, 0);
+    assert.equal(resetLivePayload.viewerStats.totalViewers, 0);
     assert.equal(resetData.archived.totalWinners, 6);
 
     const historyResponse = await fetch(`${baseUrl}/api/draw/history`, { headers });
@@ -484,5 +529,48 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     if (server.exitCode === null) server.kill();
     await serverClosed;
     fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('AI announcer detects ElevenLabs no-card option and synthesizes Flash v2.5 audio', async () => {
+  const { getVoiceProviderInfo, synthesizeAnnouncementAudio } = await import('../lib/aiAnnouncer.js');
+  const prevGoogle = process.env.GOOGLE_TTS_API_KEY;
+  const prevAzure = process.env.AZURE_SPEECH_KEY;
+  const prevEleven = process.env.ELEVENLABS_API_KEY;
+  const originalFetch = globalThis.fetch;
+
+  try {
+    delete process.env.GOOGLE_TTS_API_KEY;
+    delete process.env.AZURE_SPEECH_KEY;
+    process.env.ELEVENLABS_API_KEY = 'xi-test-no-card-key';
+
+    const info = getVoiceProviderInfo();
+    assert.equal(info.configured, true);
+    assert.equal(info.provider, 'elevenlabs');
+
+    const captured = [];
+    globalThis.fetch = async (url, init) => {
+      captured.push({ url, init });
+      return new Response(Buffer.from('ID3-mock-mp3-elevenlabs'), {
+        status: 200,
+        headers: { 'Content-Type': 'audio/mpeg' }
+      });
+    };
+
+    const audio = await synthesizeAnnouncementAudio('Unit test ElevenLabs voice', 'female');
+    assert.equal(audio.toString(), 'ID3-mock-mp3-elevenlabs');
+    assert.equal(captured.length, 1);
+    assert.match(captured[0].url, /^https:\/\/api\.elevenlabs\.io\/v1\/text-to-speech\//);
+    assert.equal(captured[0].init.headers['xi-api-key'], 'xi-test-no-card-key');
+    const sentBody = JSON.parse(captured[0].init.body);
+    assert.equal(sentBody.model_id, 'eleven_flash_v2_5');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevGoogle === undefined) delete process.env.GOOGLE_TTS_API_KEY;
+    else process.env.GOOGLE_TTS_API_KEY = prevGoogle;
+    if (prevAzure === undefined) delete process.env.AZURE_SPEECH_KEY;
+    else process.env.AZURE_SPEECH_KEY = prevAzure;
+    if (prevEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = prevEleven;
   }
 });
