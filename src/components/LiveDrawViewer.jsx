@@ -17,7 +17,9 @@ import RouletteWheelCanvas from './RouletteWheelCanvas';
 import {
   launchConfetti,
   playAnnouncerVoice,
+  playSpinAdlib,
   preloadBrowserVoices,
+  resetAdlibPool,
   sfx,
   stopAllAnnouncements,
   tryUnlockAudio
@@ -70,6 +72,44 @@ export default function LiveDrawViewer({ pageSettings }) {
     audioConfigRef.current = { enabled: soundEnabled, unlocked: audioUnlocked };
     sfx.muted = !soundEnabled;
   }, [soundEnabled, audioUnlocked]);
+
+  // ─── SPIN AD-LIBS: Random Tagalog entertainment while roulette spins ───────
+  // Uses browser speechSynthesis ONLY — does NOT consume cloud TTS quota.
+  const adlibTimerRef = useRef(null);
+  useEffect(() => {
+    const voiceGender = liveData?.liveState?.voiceGender || 'male';
+    if (spinPhase === 'spinning' && audioConfigRef.current.enabled) {
+      resetAdlibPool();
+      const scheduleNext = () => {
+        const delay = Math.random() * 8000 + 12000; // 12–20s random interval
+        adlibTimerRef.current = setTimeout(async () => {
+          if (audioConfigRef.current.enabled && spinPhaseRef.current === 'spinning') {
+            await playSpinAdlib(voiceGender);
+            scheduleNext(); // schedule next after this one
+          }
+        }, delay);
+      };
+      // First ad-lib after 10s
+      adlibTimerRef.current = setTimeout(async () => {
+        if (audioConfigRef.current.enabled && spinPhaseRef.current === 'spinning') {
+          await playSpinAdlib(voiceGender);
+          scheduleNext();
+        }
+      }, 10000);
+    } else {
+      if (adlibTimerRef.current) {
+        clearTimeout(adlibTimerRef.current);
+        adlibTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (adlibTimerRef.current) {
+        clearTimeout(adlibTimerRef.current);
+        adlibTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinPhase]);
 
   useEffect(() => {
     preloadBrowserVoices();

@@ -25,7 +25,7 @@ import {
   X
 } from 'lucide-react';
 import RouletteWheelCanvas from './RouletteWheelCanvas';
-import { launchConfetti, playAnnouncerVoice, sfx, stopAllAnnouncements } from '../utils/raffleAudio';
+import { launchConfetti, playAnnouncerVoice, playSpinAdlib, resetAdlibPool, sfx, stopAllAnnouncements } from '../utils/raffleAudio';
 
 export default function RaffleRoulette({
   entries = [],
@@ -87,6 +87,43 @@ export default function RaffleRoulette({
       stopAllAnnouncements();
     };
   }, []);
+
+  // ─── SPIN AD-LIBS: Random Tagalog entertainment while roulette spins ───────
+  // Uses browser speechSynthesis ONLY — does NOT consume cloud TTS quota.
+  const adlibTimerRef = useRef(null);
+  useEffect(() => {
+    if (spinPhase === 'spinning' && soundEnabled && voiceEnabled) {
+      resetAdlibPool();
+      const scheduleNext = () => {
+        const delay = Math.random() * 8000 + 12000; // 12–20s random interval
+        adlibTimerRef.current = setTimeout(async () => {
+          if (spinPhase === 'spinning') {
+            await playSpinAdlib(voiceGender);
+            scheduleNext();
+          }
+        }, delay);
+      };
+      // First ad-lib after 10 seconds
+      adlibTimerRef.current = setTimeout(async () => {
+        if (spinPhase === 'spinning') {
+          await playSpinAdlib(voiceGender);
+          scheduleNext();
+        }
+      }, 10000);
+    } else {
+      if (adlibTimerRef.current) {
+        clearTimeout(adlibTimerRef.current);
+        adlibTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (adlibTimerRef.current) {
+        clearTimeout(adlibTimerRef.current);
+        adlibTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinPhase, soundEnabled, voiceEnabled]);
 
   const handleExportWinners = async (format) => {
     if (!drawResults.length) return;
@@ -197,8 +234,23 @@ export default function RaffleRoulette({
 
   const handleCopyLiveLink = async () => {
     const targetUrl = publicLiveUrl || `${window.location.origin}/live`;
+    const fullMessage = [
+      '🔴 LIVE NA ANG STL RAFFLE DRAW!',
+      '',
+      '🌾 Panoorin natin kung sino ang mananalo ng BIGAS!',
+      '✅ I-click ang link para manood ng live draw ngayon:',
+      '',
+      `👉 ${targetUrl}`,
+      '',
+      '📌 Para sa mga nanonood:',
+      '• I-tap muna ang screen para ma-on ang boses',
+      '• Hintayin ang pag-ikot ng roleta',
+      '• Makikita ang pangalan ng nanalo kapag huminto na',
+      '',
+      '#STLRaffle #LiveDraw #RiceRaffle #STLCommunity'
+    ].join('\n');
     try {
-      await navigator.clipboard.writeText(targetUrl);
+      await navigator.clipboard.writeText(fullMessage);
       setCopiedLiveLink(true);
       setTimeout(() => setCopiedLiveLink(false), 2500);
     } catch {

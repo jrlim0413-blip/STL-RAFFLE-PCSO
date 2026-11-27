@@ -1079,6 +1079,14 @@ if (!process.env.VERCEL && fs.existsSync(distPath)) {
       let html = fs.readFileSync(indexPath, 'utf-8');
       html = html.replace(/https:\/\/stl-raffle-(campaign|pcso)\.vercel\.app/g, fullOrigin);
       html = html.replace(/content="\/images\/share-preview\.(jpg|png)"/g, `content="${fullOrigin}/images/share-preview.jpg"`);
+      // Inject /live-specific OG tags when the Live page is requested
+      if (req.path === '/live' || req.originalUrl === '/live') {
+        html = html
+          .replace(/<meta property="og:url" content="[^"]*"/, `<meta property="og:url" content="${fullOrigin}/live"`)
+          .replace(/<meta property="og:title" content="[^"]*"/, `<meta property="og:title" content="🔴 STL LIVE DRAW - Panoorin Ngayon!"`)
+          .replace(/<meta property="og:description" content="[^"]*"/, `<meta property="og:description" content="🌾 Live na ang STL Community Rice Raffle Draw! Panoorin kung sino ang mananalo ng bigas. I-click para manood ng live!"`)
+          .replace(/<title>[^<]*<\/title>/, `<title>🔴 STL LIVE DRAW - Panoorin Ngayon!</title>`);
+      }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
     } catch {

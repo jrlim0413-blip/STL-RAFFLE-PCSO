@@ -277,6 +277,89 @@ export async function playAnnouncerVoice({
   return { played: false };
 }
 
+// ─── SPIN AD-LIBS ────────────────────────────────────────────────────────────
+// 30 non-repeating Tagalog ad-lib lines for entertainment while the wheel spins.
+// Uses browser speech synthesis ONLY — does NOT consume cloud TTS quota.
+export const SPIN_ADLIBS = [
+  'Sino kaya ang maswerte ngayon? Panoorin natin!',
+  'Umaasa ka na ba? Abang-abay tayo lahat!',
+  'Malapit na! Handa na ba kayong malaman ang nanalo?',
+  'Ang roleta ay umiikot na! Huwag umalis sa screen!',
+  'Puso na yan! Ikaw kaya ang susunod na manalo?',
+  'Exciting! Pati kami nagsasabik dito!',
+  'Ito na! Panoorin kung sino ang pinili ng tadhana!',
+  'Ang swerte ay nandito na lamang! Abangan!',
+  'Grabe ang excitement! Sino sa inyo ang feeling lucky ngayon?',
+  'Huwag mawala sa screen! Malapit na ang sagot!',
+  'Ang STL Raffle ay walang paborito — patas para sa lahat!',
+  'Kahit sino sa atin ay puwedeng manalo ng bigas ngayon!',
+  'Dahan-dahan na ang roleta... o hindi pa? Exciting talaga!',
+  'Salamat sa lahat ng nanood at sumali! Kayo ang dahilan ng pagtitipon na ito!',
+  'Ang roleta ay walang tigil! Sino kaya ang hihinto para sa kanya?',
+  'Panalo o talo, nandito tayo para sa saya at pagkakaisa!',
+  'Daming nanonood ngayon! Maraming salamat sa inyong tiwala!',
+  'Bawat ikot ng roleta ay puno ng pag-asa at kaguluhan!',
+  'Kung nandito ka ngayon, ikaw ay espesyal — isa sa mga maswerte!',
+  'Hindi pa tapos! May susunod pa na round pagkatapos nito!',
+  'Handa na ba ang inyong puso? Malapit na ang resulta!',
+  'Ang STL Community ay nagmamahal sa bawat isa sa inyo!',
+  'Wow ang ganda ng crowd ngayon! Marami pong salamat!',
+  'Kahit saan kayo manggaling, ikaw ay bahagi ng pamilyang ito!',
+  'Exciting ang feeling na ito — parang birthday pero mas masaya!',
+  'Ang panalo mo ay aming regalo sa iyong dedikasyon at tiwala!',
+  'Huwag kalimutang i-share ang link sa inyong mga kaibigan!',
+  'Ikaw ba ay nasa GC natin? Share mo ito sa lahat ng kasama mo!',
+  'Bawat draw ay isang bagong pagkakataon — ito na ang iyong sandali!',
+  'Sama-sama nating hintayin ang susunod na manalo ng bigas!'
+];
+
+// Track used ad-lib indices per spin session (resets when all used)
+let _adlibUsedIndices = new Set();
+
+/**
+ * Picks a random unused ad-lib line and speaks it via browser TTS.
+ * Does NOT use cloud TTS — purely browser speechSynthesis.
+ * @param {string} gender - 'male' | 'female'
+ * @returns {Promise<boolean>} true if speech started
+ */
+export async function playSpinAdlib(gender = 'male') {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  // Don't interrupt active announcer voice (cloud TTS audio element)
+  if (activeAudioElement && !activeAudioElement.paused) return false;
+
+  // Reset pool if all used
+  if (_adlibUsedIndices.size >= SPIN_ADLIBS.length) {
+    _adlibUsedIndices = new Set();
+  }
+
+  // Pick a random unused index
+  let idx;
+  let attempts = 0;
+  do {
+    idx = Math.floor(Math.random() * SPIN_ADLIBS.length);
+    attempts += 1;
+  } while (_adlibUsedIndices.has(idx) && attempts < SPIN_ADLIBS.length * 3);
+
+  _adlibUsedIndices.add(idx);
+  const line = SPIN_ADLIBS[idx];
+
+  try {
+    // Don't cancel existing speech — only speak if speechSynthesis is free
+    if (window.speechSynthesis.speaking) return false;
+    const result = await speakWithBrowserVoice(line, gender);
+    return result?.played ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resets the ad-lib used-indices pool (call when spin ends or new round starts).
+ */
+export function resetAdlibPool() {
+  _adlibUsedIndices = new Set();
+}
+
 /**
  * Triggers celebratory confetti animation on a canvas overlay element.
  */

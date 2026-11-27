@@ -21,15 +21,15 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/live",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/admin",
       "destination": "/index.html"
     },
     {
       "source": "/admin/:path*",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/live",
       "destination": "/index.html"
     }
   ]
