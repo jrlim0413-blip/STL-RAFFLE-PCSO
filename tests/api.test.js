@@ -326,6 +326,11 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       '5 kg rice', '5 kg rice', '25 kg rice'
     ]);
 
+    const exportWinnersResponse = await fetch(`${baseUrl}/api/draw/export-winners`, { headers });
+    assert.equal(exportWinnersResponse.status, 200);
+    const winnersCsv = await exportWinnersResponse.text();
+    assert.match(winnersCsv, /"Round","Prize","Winning Ticket"/);
+
     const resetDrawResponse = await fetch(`${baseUrl}/api/draw/reset`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },

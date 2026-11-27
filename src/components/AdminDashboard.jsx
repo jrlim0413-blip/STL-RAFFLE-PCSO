@@ -60,6 +60,7 @@ export default function AdminDashboard({
   const [editInstruction, setEditInstruction] = useState('');
   const [editSuggestedComment, setEditSuggestedComment] = useState('');
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
+  const [exportingKey, setExportingKey] = useState('');
 
   useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
@@ -345,6 +346,7 @@ export default function AdminDashboard({
 
   const downloadCsv = async () => {
     setError('');
+    setExportingKey('entries-csv');
     try {
       const response = await fetch('/api/export', {
         headers: { 'x-admin-passcode': adminPasscode }
@@ -354,10 +356,54 @@ export default function AdminDashboard({
       const link = document.createElement('a');
       link.href = url;
       link.download = 'raffle-entries.csv';
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (exportError) {
       setError(exportError.message || 'Could not export entries.');
+    } finally {
+      setExportingKey('');
+    }
+  };
+
+  const handleExportEntries = async (format) => {
+    if (!entries.length) {
+      setError('Walang entries na maaring i-export.');
+      return;
+    }
+    setError('');
+    const key = `entries-${format}`;
+    setExportingKey(key);
+    try {
+      const { exportEntriesReport } = await import('../utils/exportReports');
+      await exportEntriesReport(format, entries, {
+        campaignName: settings.campaignName || 'STL Community Rice Raffle'
+      });
+    } catch (exportError) {
+      setError(exportError.message || 'Hindi ma-export ang talaan ng mga kalahok.');
+    } finally {
+      setExportingKey('');
+    }
+  };
+
+  const handleExportBatch = async (format, batch, index) => {
+    const batchResults = batch?.results || [];
+    if (!batchResults.length) return;
+    setError('');
+    const key = `${batch.id || index}-${format}`;
+    setExportingKey(key);
+    try {
+      const { exportWinnersReport } = await import('../utils/exportReports');
+      await exportWinnersReport(format, batchResults, {
+        campaignName: settings.campaignName || 'STL Community Rice Raffle',
+        batchLabel: batch.note || `Batch #${batch.batchNumber || index + 1}`,
+        savedAt: batch.savedAt
+      });
+    } catch (exportError) {
+      setError(exportError.message || 'Hindi ma-export ang mga nanalo sa batch na ito.');
+    } finally {
+      setExportingKey('');
     }
   };
 
@@ -391,11 +437,37 @@ export default function AdminDashboard({
           <button type="button" onClick={() => setShowShareModal(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-sm transition">
             <Share2 className="w-4 h-4" /> Share & QR Code
           </button>
-          <button onClick={onRefresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border bg-white text-sm font-bold">
+          <button onClick={onRefresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border bg-white text-sm font-bold hover:bg-slate-50 transition">
             <RotateCcw className="w-4 h-4" /> Refresh
           </button>
-          <button type="button" onClick={downloadCsv} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold">
-            <Download className="w-4 h-4" /> Export CSV
+          <button
+            type="button"
+            disabled={Boolean(exportingKey)}
+            onClick={() => handleExportEntries('pdf')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+            title="I-download ang lahat ng kalahok bilang PDF"
+          >
+            {exportingKey === 'entries-pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            <span>PDF</span>
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(exportingKey)}
+            onClick={() => handleExportEntries('docx')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+            title="I-download ang lahat ng kalahok bilang Word (.docx)"
+          >
+            {exportingKey === 'entries-docx' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            <span>Word</span>
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(exportingKey)}
+            onClick={downloadCsv}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+          >
+            {exportingKey === 'entries-csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span>Export CSV</span>
           </button>
         </div>
       </div>
@@ -820,6 +892,7 @@ export default function AdminDashboard({
           nextRound={nextRound}
           nextPrize={nextPrize}
           drawResults={drawResults}
+          campaignName={settings.campaignName || 'STL Community Rice Raffle'}
           adminPasscode={adminPasscode}
           onDrawComplete={(winnerData) => {
             setWinner(winnerData);
@@ -871,7 +944,37 @@ export default function AdminDashboard({
                   </span>
                 </summary>
 
-                <div className="border-t border-slate-200 bg-white p-4">
+                <div className="border-t border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-600">I-download ang rekord ng batch na ito:</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {[
+                        { format: 'pdf', label: 'PDF (.pdf)', style: 'bg-rose-600 hover:bg-rose-700 text-white' },
+                        { format: 'docx', label: 'Word (.docx)', style: 'bg-indigo-600 hover:bg-indigo-700 text-white' },
+                        { format: 'csv', label: 'Excel (.csv)', style: 'bg-slate-700 hover:bg-slate-800 text-white' }
+                      ].map((btn) => {
+                        const isThisExporting = exportingKey === `${batch.id || index}-${btn.format}`;
+                        return (
+                          <button
+                            key={btn.format}
+                            type="button"
+                            disabled={Boolean(exportingKey)}
+                            onClick={() => handleExportBatch(btn.format, batch, index)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold shadow-xs transition disabled:opacity-50 ${btn.style}`}
+                          >
+                            {isThisExporting ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : btn.format === 'csv' ? (
+                              <Download className="w-3.5 h-3.5" />
+                            ) : (
+                              <FileText className="w-3.5 h-3.5" />
+                            )}
+                            <span>{btn.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs min-w-[650px]">
                       <thead className="bg-slate-100/80 text-slate-600 font-black uppercase text-[10px] tracking-wider">

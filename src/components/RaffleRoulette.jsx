@@ -3,6 +3,7 @@ import {
   Award,
   CheckCircle2,
   Download,
+  FileText,
   Gift,
   Loader2,
   RotateCcw,
@@ -85,6 +86,7 @@ export default function RaffleRoulette({
   nextRound,
   nextPrize,
   drawResults = [],
+  campaignName = 'STL Community Rice Raffle',
   adminPasscode,
   onDrawComplete,
   onResetDraw,
@@ -99,8 +101,25 @@ export default function RaffleRoulette({
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetNote, setResetNote] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState('');
   const canvasRef = useRef(null);
   const wheelRef = useRef(null);
+
+  const handleExportWinners = async (format) => {
+    if (!drawResults.length) return;
+    setExportingFormat(format);
+    try {
+      const { exportWinnersReport } = await import('../utils/exportReports');
+      await exportWinnersReport(format, drawResults, {
+        campaignName,
+        batchLabel: `Kasalukuyang Draw (${drawResults.length} of 6)`
+      });
+    } catch (exportErr) {
+      if (onError) onError(exportErr.message || 'Hindi ma-download ang listahan ng mga nanalo.');
+    } finally {
+      setExportingFormat('');
+    }
+  };
 
   const handleConfirmReset = async (event) => {
     if (event) event.preventDefault();
@@ -597,6 +616,44 @@ export default function RaffleRoulette({
             </div>
           </div>
 
+          {/* DOWNLOAD WINNERS AS PDF / WORD / CSV WHENEVER AT LEAST 1 WINNER EXISTS */}
+          {drawResults.length > 0 && (
+            <div className="rounded-2xl border border-white/15 bg-slate-900/90 p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-300">
+                  I-download ang Listahan ng Nanalo
+                </p>
+                <span className="text-[11px] text-slate-400 font-semibold">
+                  {drawResults.length}/6 Nabunot
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { format: 'pdf', label: 'PDF (.pdf)', style: 'bg-rose-600 hover:bg-rose-700 text-white' },
+                  { format: 'docx', label: 'Word (.docx)', style: 'bg-blue-600 hover:bg-blue-700 text-white' },
+                  { format: 'csv', label: 'Excel (.csv)', style: 'bg-white/10 hover:bg-white/20 border border-white/20 text-white' }
+                ].map((btn) => (
+                  <button
+                    key={btn.format}
+                    type="button"
+                    disabled={Boolean(exportingFormat)}
+                    onClick={() => handleExportWinners(btn.format)}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold shadow-sm transition disabled:opacity-50 ${btn.style}`}
+                  >
+                    {exportingFormat === btn.format ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                    ) : btn.format === 'csv' ? (
+                      <Download className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>{btn.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* CELEBRATION / ACTIONS WHEN ALL DRAWS ARE COMPLETED */}
           {drawResults.length === 6 && (
             <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-950/90 via-slate-900 to-slate-900 p-4 text-white shadow-xl space-y-3 animate-fadeIn">
@@ -605,29 +662,19 @@ export default function RaffleRoulette({
                 <span>Kumpleto na ang Lahat ng 6 Rounds ng Draw!</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Naipamahagi na ang limang 5kg at isang 25kg bigas. I-download ang opisyal na listahan ng mga nanalo, o i-archive sa kasaysayan at i-reset ang draw para sa susunod na session.
+                Naipamahagi na ang limang 5kg at isang 25kg bigas. I-archive sa kasaysayan at i-reset ang draw para sa susunod na session.
               </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <a
-                  href="/api/draw/export-winners"
-                  download
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 px-3.5 py-2 text-xs font-bold text-white transition"
-                >
-                  <Download className="w-3.5 h-3.5 text-yellow-400" />
-                  <span>I-download ang Winners (CSV)</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setResetNote(`Draw Batch - ${new Date().toLocaleDateString('en-PH')}`);
-                    setShowResetModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3.5 py-2 text-xs font-black text-slate-950 shadow-md transition"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>I-save sa History at I-reset ang Draw</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetNote(`Draw Batch - ${new Date().toLocaleDateString('en-PH')}`);
+                  setShowResetModal(true);
+                }}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3.5 py-2.5 text-xs font-black text-slate-950 shadow-md transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>I-save sa History at I-reset ang Draw</span>
+              </button>
             </div>
           )}
 
