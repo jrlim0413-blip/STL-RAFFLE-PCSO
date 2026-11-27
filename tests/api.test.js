@@ -14,6 +14,12 @@ const adminPasscode = 'test-organizer-passcode';
 const png = Buffer.from('89504e470d0a1a0a-test-image', 'hex');
 const proofPages = ['melquiades', 'pcso', 'situation-report'];
 
+test('Vercel routes /live through the live page handler', () => {
+  const vercelConfig = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const liveRewrite = vercelConfig.rewrites.find((rewrite) => rewrite.source === '/live');
+  assert.equal(liveRewrite?.destination, '/api/live-og.js');
+});
+
 test('HTML 404 API responses produce a useful message instead of a JSON parse error', async () => {
   const response = new Response('The page could not be found', {
     status: 404,
