@@ -67,6 +67,8 @@ export default function AdminDashboard({
   const [editSuggestedComment, setEditSuggestedComment] = useState('');
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
   const [exportingKey, setExportingKey] = useState('');
+  const [voiceInfo, setVoiceInfo] = useState(null);
+  const [initialVoiceGender, setInitialVoiceGender] = useState('male');
 
   useEffect(() => setSettings(settingsDraft(pageSettings)), [pageSettings]);
   useEffect(() => {
@@ -78,6 +80,8 @@ export default function AdminDashboard({
         setDrawResults(data.results || []);
         setNextRound(data.nextRound);
         setNextPrize(data.nextPrize);
+        if (data.voiceInfo) setVoiceInfo(data.voiceInfo);
+        if (data.liveState?.voiceGender) setInitialVoiceGender(data.liveState.voiceGender);
         if (data.results?.length) {
           setWinner(data.results[data.results.length - 1]);
           setSpinTicket(data.results[data.results.length - 1].winner.ticket);
@@ -899,6 +903,9 @@ export default function AdminDashboard({
           nextPrize={nextPrize}
           drawResults={drawResults}
           campaignName={settings.campaignName || 'STL Community Rice Raffle'}
+          publicLiveUrl={`${getPublicBaseUrl()}/live`}
+          voiceInfo={voiceInfo}
+          initialVoiceGender={initialVoiceGender}
           adminPasscode={adminPasscode}
           onDrawComplete={(winnerData) => {
             setWinner(winnerData);

@@ -359,6 +359,33 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       assert.equal(response.status, 200);
     }
 
+    const liveStateUpdate = await fetch(`${baseUrl}/api/draw/live-state`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phase: 'spinning',
+        round: 1,
+        prize: '5 kg rice',
+        wheelTickets: tickets.slice(0, 6),
+        eligibleCount: 6,
+        voiceGender: 'female'
+      })
+    });
+    assert.equal(liveStateUpdate.status, 200);
+
+    const publicLiveDuringSpin = await fetch(`${baseUrl}/api/draw/live`);
+    assert.equal(publicLiveDuringSpin.status, 200);
+    const liveSpinPayload = await publicLiveDuringSpin.json();
+    assert.equal(liveSpinPayload.liveState.phase, 'spinning');
+    assert.equal(liveSpinPayload.liveState.voiceGender, 'female');
+    assert.deepEqual(liveSpinPayload.liveState.wheelTickets, tickets.slice(0, 6));
+
+    const announceSpinResponse = await fetch(`${baseUrl}/api/draw/announce?kind=spin&round=1&gender=female`);
+    assert.equal(announceSpinResponse.status, 200);
+    const announceSpinPayload = await announceSpinResponse.json();
+    assert.equal(announceSpinPayload.mode, 'browser');
+    assert.match(announceSpinPayload.text, /Draw number 1/);
+
     const winners = [];
     const prizes = [];
     for (let round = 0; round < 6; round += 1) {
@@ -374,6 +401,34 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
       '5 kg rice', '5 kg rice', '25 kg rice'
     ]);
 
+    const publicLiveWinnersResponse = await fetch(`${baseUrl}/api/draw/live`);
+    assert.equal(publicLiveWinnersResponse.status, 200);
+    const publicLiveWinners = await publicLiveWinnersResponse.json();
+    assert.equal(publicLiveWinners.liveState.phase, 'winner');
+    assert.equal(publicLiveWinners.results.length, 6);
+    for (const item of publicLiveWinners.results) {
+      assert.equal('contact' in item.winner, false);
+      assert.equal('proofs' in item.winner, false);
+    }
+
+    const unauthorizedTestVoice = await fetch(`${baseUrl}/api/draw/announce?kind=test`);
+    assert.equal(unauthorizedTestVoice.status, 401);
+
+    const adminTestVoice = await fetch(`${baseUrl}/api/draw/announce?kind=test&gender=male`, { headers });
+    assert.equal(adminTestVoice.status, 200);
+    assert.equal((await adminTestVoice.json()).mode, 'browser');
+
+    const invalidWinnerAnnounce = await fetch(`${baseUrl}/api/draw/announce?kind=winner&round=1&ticket=STL-00000000-000000`);
+    assert.equal(invalidWinnerAnnounce.status, 404);
+
+    const validWinnerAnnounce = await fetch(
+      `${baseUrl}/api/draw/announce?kind=winner&round=1&ticket=${encodeURIComponent(winners[0])}&gender=male`
+    );
+    assert.equal(validWinnerAnnounce.status, 200);
+    const winnerAnnounceData = await validWinnerAnnounce.json();
+    assert.equal(winnerAnnounceData.mode, 'browser');
+    assert.match(winnerAnnounceData.text, new RegExp(winners[0].slice(-6).split('').join(' ')));
+
     const exportWinnersResponse = await fetch(`${baseUrl}/api/draw/export-winners`, { headers });
     assert.equal(exportWinnersResponse.status, 200);
     const winnersCsv = await exportWinnersResponse.text();
@@ -388,6 +443,12 @@ test('local API persists entries, private proofs, settings, and ordered draws', 
     const resetData = await resetDrawResponse.json();
     assert.equal(resetData.nextRound, 1);
     assert.equal(resetData.results.length, 0);
+
+    const publicLiveAfterReset = await fetch(`${baseUrl}/api/draw/live`);
+    assert.equal(publicLiveAfterReset.status, 200);
+    const resetLivePayload = await publicLiveAfterReset.json();
+    assert.equal(resetLivePayload.liveState.phase, 'idle');
+    assert.equal(resetLivePayload.results.length, 0);
     assert.equal(resetData.archived.totalWinners, 6);
 
     const historyResponse = await fetch(`${baseUrl}/api/draw/history`, { headers });

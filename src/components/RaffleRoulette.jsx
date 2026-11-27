@@ -1,13 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Award,
+  Check,
   CheckCircle2,
+  Copy,
   Download,
   FileText,
   Gift,
   Loader2,
   Maximize2,
+  Mic,
   Minimize2,
+  Radio,
   RotateCcw,
   Sparkles,
   Square,
@@ -19,70 +23,8 @@ import {
   Ticket,
   X
 } from 'lucide-react';
-
-// Web Audio API Synthesizer for realistic clicking ticks and triumphant fanfare
-class SoundFX {
-  constructor() {
-    this.ctx = null;
-    this.muted = false;
-  }
-
-  init() {
-    if (!this.ctx && typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) this.ctx = new AudioCtx();
-    }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
-  }
-
-  playTick(pitchModifier = 1) {
-    if (this.muted) return;
-    try {
-      this.init();
-      if (!this.ctx) return;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(600 * pitchModifier, this.ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.04);
-      gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.04);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(this.ctx.currentTime + 0.045);
-    } catch (e) {
-      // Ignore audio error if browser blocks autoplay
-    }
-  }
-
-  playFanfare() {
-    if (this.muted) return;
-    try {
-      this.init();
-      if (!this.ctx) return;
-      const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99]; // C4, E4, G4, C5, E5, G5
-      notes.forEach((freq, i) => {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        const start = this.ctx.currentTime + i * 0.1;
-        gain.gain.setValueAtTime(0, start);
-        gain.gain.linearRampToValueAtTime(0.3, start + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.8);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(start);
-        osc.stop(start + 0.85);
-      });
-    } catch (e) { }
-  }
-}
-
-const sfx = new SoundFX();
+import RouletteWheelCanvas from './RouletteWheelCanvas';
+import { launchConfetti, playAnnouncerVoice, sfx, stopAllAnnouncements } from '../utils/raffleAudio';
 
 export default function RaffleRoulette({
   entries = [],
@@ -90,6 +32,9 @@ export default function RaffleRoulette({
   nextPrize,
   drawResults = [],
   campaignName = 'STL Community Rice Raffle',
+  publicLiveUrl = 'https://stl-raffle-campaign.vercel.app/live',
+  voiceInfo = null,
+  initialVoiceGender = 'male',
   adminPasscode,
   onDrawComplete,
   onResetDraw,
@@ -100,6 +45,10 @@ export default function RaffleRoulette({
   const [currentWinner, setCurrentWinner] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceGender, setVoiceGender] = useState(initialVoiceGender || 'male');
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [copiedLiveLink, setCopiedLiveLink] = useState(false);
   const [ticketFormat, setTicketFormat] = useState('last6'); // 'last6' (huling 6 digits) o 'full' (buong ticket)
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [winningSliceOverride, setWinningSliceOverride] = useState(null);
@@ -115,6 +64,12 @@ export default function RaffleRoulette({
   const isSpinning = spinPhase !== 'idle';
 
   useEffect(() => {
+    if (initialVoiceGender === 'male' || initialVoiceGender === 'female') {
+      setVoiceGender(initialVoiceGender);
+    }
+  }, [initialVoiceGender]);
+
+  useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && isLiveMode && !showResetModal) {
         setIsLiveMode(false);
@@ -127,6 +82,7 @@ export default function RaffleRoulette({
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      stopAllAnnouncements();
     };
   }, []);
 
@@ -183,18 +139,6 @@ export default function RaffleRoulette({
     return e.status === 'Eligible';
   });
 
-  // Colors for roulette wheel segments (STL Community Raffle vibrant festive theme)
-  const segmentColors = [
-    '#1e3a8a', // Royal Blue
-    '#dc2626', // Vibrant Red
-    '#eab308', // Gold Yellow
-    '#059669', // Emerald Green
-    '#7c3aed', // Purple
-    '#ea580c', // Orange
-    '#0284c7', // Sky Blue
-    '#be123c', // Rose Red
-  ];
-
   // Up to 16 display segments for visual aesthetic
   const baseDisplayItems = eligibleEntries.slice(0, 16);
   const displayItems = winningSliceOverride && baseDisplayItems.length > 0
@@ -204,8 +148,60 @@ export default function RaffleRoulette({
 
   // Toggle sound
   const toggleSound = () => {
-    sfx.muted = soundEnabled;
-    setSoundEnabled(!soundEnabled);
+    const nextEnabled = !soundEnabled;
+    sfx.muted = !nextEnabled;
+    if (!nextEnabled) {
+      stopAllAnnouncements();
+    }
+    setSoundEnabled(nextEnabled);
+  };
+
+  const syncLiveState = async (payload) => {
+    try {
+      await fetch('/api/draw/live-state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': adminPasscode
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch {
+      // Do not interrupt admin draw controls if spectator sync fails
+    }
+  };
+
+  const handleSyncVoiceGender = async (nextGender) => {
+    setVoiceGender(nextGender);
+    await syncLiveState({ voiceGender: nextGender });
+  };
+
+  const handleTestVoice = async () => {
+    if (isTestingVoice) return;
+    setIsTestingVoice(true);
+    try {
+      sfx.muted = !soundEnabled;
+      sfx.init();
+      await playAnnouncerVoice({
+        kind: 'test',
+        gender: voiceGender,
+        headers: { 'x-admin-passcode': adminPasscode },
+        enabled: true
+      });
+    } finally {
+      setIsTestingVoice(false);
+    }
+  };
+
+  const handleCopyLiveLink = async () => {
+    const targetUrl = publicLiveUrl || `${window.location.origin}/live`;
+    try {
+      await navigator.clipboard.writeText(targetUrl);
+      setCopiedLiveLink(true);
+      setTimeout(() => setCopiedLiveLink(false), 2500);
+    } catch {
+      if (onError) onError(`Live Viewer Link: ${targetUrl}`);
+    }
   };
 
   const applyWheelAngle = (angle, pitch = 1.05) => {
@@ -233,11 +229,31 @@ export default function RaffleRoulette({
       return;
     }
 
+    sfx.muted = !soundEnabled;
     sfx.init();
     setWinningSliceOverride(null);
     setShowCelebration(false);
     setCurrentWinner(null);
     setSpinPhase('spinning');
+
+    const wheelTickets = baseDisplayItems.map((item) => item.ticket);
+    syncLiveState({
+      phase: 'spinning',
+      round: nextRound,
+      prize: nextRound === 6 ? '25 kg rice' : '5 kg rice',
+      wheelTickets,
+      eligibleCount: eligibleEntries.length,
+      voiceGender
+    });
+
+    if (soundEnabled && voiceEnabled) {
+      playAnnouncerVoice({
+        kind: 'spin',
+        round: nextRound,
+        gender: voiceGender,
+        enabled: true
+      });
+    }
 
     let lastTime = performance.now();
     const spinSpeed = 1080; // degrees per second (3 rotations/sec)
@@ -260,6 +276,15 @@ export default function RaffleRoulette({
     rafRef.current = null;
     setRotation(rotationRef.current);
     setSpinPhase('idle');
+    stopAllAnnouncements();
+    syncLiveState({
+      phase: 'idle',
+      round: nextRound,
+      prize: nextRound === 6 ? '25 kg rice' : '5 kg rice',
+      wheelTickets: baseDisplayItems.map((item) => item.ticket),
+      eligibleCount: eligibleEntries.length,
+      voiceGender
+    });
   };
 
   // Phase 2: Admin stops the wheel at their discretion & draws the official winner
@@ -270,7 +295,11 @@ export default function RaffleRoulette({
     try {
       const response = await fetch('/api/draw', {
         method: 'POST',
-        headers: { 'x-admin-passcode': adminPasscode }
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': adminPasscode
+        },
+        body: JSON.stringify({ voiceGender })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Hindi matapos ang draw.');
@@ -313,7 +342,17 @@ export default function RaffleRoulette({
           setCurrentWinner(data);
           setShowCelebration(true);
           sfx.playFanfare();
-          triggerConfetti();
+          launchConfetti(canvasRef.current);
+
+          if (soundEnabled && voiceEnabled) {
+            playAnnouncerVoice({
+              kind: 'winner',
+              round: data.round,
+              ticket: data.winner.ticket,
+              gender: voiceGender,
+              enabled: true
+            });
+          }
 
           if (onDrawComplete) {
             onDrawComplete(data);
@@ -327,67 +366,9 @@ export default function RaffleRoulette({
       rafRef.current = null;
       setRotation(rotationRef.current);
       setSpinPhase('idle');
+      syncLiveState({ phase: 'idle', voiceGender });
       if (onError) onError(err.message || 'May naganap na error sa pag-draw.');
     }
-  };
-
-  // Realistic confetti burst on canvas
-  const triggerConfetti = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    canvas.width = canvas.parentElement.offsetWidth;
-    canvas.height = canvas.parentElement.offsetHeight;
-
-    const particles = [];
-    const colors = ['#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6'];
-
-    for (let i = 0; i < 90; i++) {
-      particles.push({
-        x: canvas.width / 2,
-        y: canvas.height / 2,
-        vx: (Math.random() - 0.5) * 16,
-        vy: (Math.random() - 0.7) * 16,
-        size: Math.random() * 8 + 4,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        rotation: Math.random() * 360,
-        vr: (Math.random() - 0.5) * 12,
-        alpha: 1
-      });
-    }
-
-    let frame = 0;
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      let active = false;
-
-      particles.forEach((p) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy += 0.35; // gravity
-        p.rotation += p.vr;
-        p.alpha -= 0.012;
-
-        if (p.alpha > 0) {
-          active = true;
-          ctx.save();
-          ctx.globalAlpha = p.alpha;
-          ctx.translate(p.x, p.y);
-          ctx.rotate((p.rotation * Math.PI) / 180);
-          ctx.fillStyle = p.color;
-          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-          ctx.restore();
-        }
-      });
-
-      frame++;
-      if (active && frame < 120) {
-        requestAnimationFrame(animate);
-      } else {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-    };
-    requestAnimationFrame(animate);
   };
 
   return (
@@ -443,6 +424,21 @@ export default function RaffleRoulette({
             <span>{soundEnabled ? 'Audio ON' : 'Muted'}</span>
           </button>
 
+          {/* Copy Public Live Spectator Link (/live) */}
+          <button
+            type="button"
+            onClick={handleCopyLiveLink}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition ${
+              copiedLiveLink
+                ? 'border-emerald-400 bg-emerald-500 text-white'
+                : 'border-sky-400/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
+            }`}
+            title="Kopyahin ang link ng Live Spectator Page para ipaste sa lahat ng GC"
+          >
+            {copiedLiveLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedLiveLink ? 'Nakopya ang Live Link!' : 'Copy Live Link (/live)'}</span>
+          </button>
+
           {/* Live View Presentation Mode Button (Ideal for Messenger GC Screen Share) */}
           <button
             type="button"
@@ -461,6 +457,86 @@ export default function RaffleRoulette({
           <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3.5 py-1.5 text-xs font-bold text-amber-300 flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5" />
             <span>{eligibleEntries.length} Kwalipikadong Entries</span>
+          </div>
+        </div>
+
+        {/* AI Voice Announcer & Live Spectator Control Bar */}
+        <div className="w-full mt-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-bold text-sky-300">
+              <Radio className={`w-3.5 h-3.5 ${isSpinning ? 'text-red-400 animate-pulse' : 'text-sky-400'}`} />
+              Live Broadcast Sync:
+            </span>
+            <a
+              href={publicLiveUrl || '/live'}
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-sky-400/60 text-sky-200 hover:text-white font-semibold"
+            >
+              {publicLiveUrl || '/live'}
+            </a>
+            {voiceInfo?.label ? (
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${
+                  voiceInfo.configured
+                    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
+                    : 'border-amber-400/40 bg-amber-500/15 text-amber-200'
+                }`}
+              >
+                {voiceInfo.label}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setVoiceEnabled((prev) => {
+                if (prev) stopAllAnnouncements();
+                return !prev;
+              })}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold transition ${
+                voiceEnabled
+                  ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
+                  : 'border-white/20 bg-white/10 text-slate-400 hover:bg-white/15'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>{voiceEnabled ? 'AI Voice: ON' : 'AI Voice: OFF'}</span>
+            </button>
+
+            <div className="inline-flex rounded-lg border border-white/15 bg-slate-900/70 p-0.5 text-xs font-bold">
+              <button
+                type="button"
+                disabled={isSpinning}
+                onClick={() => handleSyncVoiceGender('male')}
+                className={`px-2.5 py-1 rounded-md transition disabled:opacity-50 ${
+                  voiceGender === 'male' ? 'bg-amber-400 text-slate-950' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Lalaki
+              </button>
+              <button
+                type="button"
+                disabled={isSpinning}
+                onClick={() => handleSyncVoiceGender('female')}
+                className={`px-2.5 py-1 rounded-md transition disabled:opacity-50 ${
+                  voiceGender === 'female' ? 'bg-amber-400 text-slate-950' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Babae
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={isTestingVoice}
+              onClick={handleTestVoice}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-amber-400/40 bg-amber-500/15 text-xs font-bold text-amber-200 hover:bg-amber-500/25 transition disabled:opacity-50"
+            >
+              {isTestingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+              <span>{isTestingVoice ? 'Pinapatugtog…' : 'Test Voice'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -489,81 +565,12 @@ export default function RaffleRoulette({
 
         {/* LEFT / CENTER: THE ROULETTE WHEEL */}
         <div className="lg:col-span-7 flex flex-col items-center justify-center relative">
-
-          {/* Top Indicator Arrow Pin pointing down */}
-          <div className="relative z-20 -mb-4 flex flex-col items-center">
-            <div className="w-6 h-8 bg-gradient-to-b from-amber-300 to-red-600 clip-triangle shadow-xl drop-shadow-[0_4px_8px_rgba(239,68,68,0.8)] animate-pulse" />
-          </div>
-
-          {/* Golden Outer LED Rim */}
-          <div className="relative p-4 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-300 to-amber-700 shadow-[0_0_50px_rgba(245,158,11,0.4)] border-4 border-amber-400">
-            {/* Blinking Perimeter Lights */}
-            <div className="absolute inset-2 rounded-full border-2 border-dashed border-white/40 pointer-events-none animate-spin-slow" />
-
-            {/* Spinning SVG Roulette Wheel (60fps requestAnimationFrame driven) */}
-            <div
-              ref={wheelRef}
-              style={{
-                transform: `rotate(${isSpinning ? rotationRef.current : rotation}deg)`
-              }}
-              className="relative w-72 h-72 sm:w-96 sm:h-96 rounded-full overflow-hidden shadow-2xl border-4 border-slate-950 will-change-transform"
-            >
-              <svg viewBox="0 0 400 400" className="w-full h-full">
-                {displayItems.length > 0 ? (
-                  displayItems.map((entry, index) => {
-                    const startAngle = index * sliceAngle;
-                    const endAngle = (index + 1) * sliceAngle;
-                    const x1 = 200 + 200 * Math.cos((startAngle * Math.PI) / 180);
-                    const y1 = 200 + 200 * Math.sin((startAngle * Math.PI) / 180);
-                    const x2 = 200 + 200 * Math.cos((endAngle * Math.PI) / 180);
-                    const y2 = 200 + 200 * Math.sin((endAngle * Math.PI) / 180);
-                    const pathData = `M200,200 L${x1},${y1} A200,200 0 0,1 ${x2},${y2} Z`;
-                    const midAngle = startAngle + sliceAngle / 2;
-                    const textX = 200 + 130 * Math.cos((midAngle * Math.PI) / 180);
-                    const textY = 200 + 130 * Math.sin((midAngle * Math.PI) / 180);
-                    const color = segmentColors[index % segmentColors.length];
-                    const ticketText = ticketFormat === 'last6'
-                      ? entry.ticket.slice(-6)
-                      : entry.ticket;
-                    const fontSize = ticketFormat === 'last6'
-                      ? (displayItems.length > 10 ? '12' : '14')
-                      : (displayItems.length > 10 ? '8.5' : '10');
-
-                    return (
-                      <g key={entry.ticket}>
-                        <path d={pathData} fill={color} stroke="#ffffff" strokeWidth="1.5" />
-                        <text
-                          x={textX}
-                          y={textY}
-                          fill="#ffffff"
-                          fontSize={fontSize}
-                          fontWeight="900"
-                          fontFamily="monospace"
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          transform={`rotate(${midAngle + 90}, ${textX}, ${textY})`}
-                          className="drop-shadow-md select-none"
-                        >
-                          {ticketText}
-                        </text>
-                      </g>
-                    );
-                  })
-                ) : (
-                  <circle cx="200" cy="200" r="200" fill="#1e293b" />
-                )}
-              </svg>
-
-              {/* Center 3D Golden Spinner Hub */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-200 to-amber-700 border-4 border-white shadow-2xl flex flex-col items-center justify-center text-blue-950 font-black">
-                  <span className="text-[10px] tracking-widest uppercase text-blue-900 font-extrabold">STL</span>
-                  <span className="text-xs sm:text-sm font-black">RAFFLE</span>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-800" />
-                </div>
-              </div>
-            </div>
-          </div>
+          <RouletteWheelCanvas
+            wheelRef={wheelRef}
+            rotationAngle={isSpinning ? rotationRef.current : rotation}
+            tickets={displayItems.map((item) => item.ticket)}
+            ticketFormat={ticketFormat}
+          />
 
           {/* Admin Spin & Stop Action Controls */}
           <div className="mt-8 flex flex-col items-center gap-2.5">

@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
 import { readApiResponse } from './utils/apiResponse';
 import { ArrowLeft, Gift, ShieldCheck } from 'lucide-react';
+
+const LiveDrawViewer = lazy(() => import('./components/LiveDrawViewer'));
 
 const EMPTY_STATS = { total: 0, eligible: 0, flagged: 0, activeAgents: 0 };
 const DEFAULT_SETTINGS = {
@@ -16,7 +18,9 @@ const DEFAULT_SETTINGS = {
 };
 
 export default function App() {
-  const isAdmin = window.location.pathname.replace(/\/+$/, '') === '/admin';
+  const normalizedPath = window.location.pathname.replace(/\/+$/, '');
+  const isAdmin = normalizedPath === '/admin';
+  const isLiveViewer = normalizedPath === '/live' || new URLSearchParams(window.location.search).get('live') === '1';
   const [entries, setEntries] = useState([]);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [pageSettings, setPageSettings] = useState(DEFAULT_SETTINGS);
@@ -159,6 +163,10 @@ export default function App() {
               </form>
             </section>
           )
+        ) : isLiveViewer ? (
+          <Suspense fallback={<div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-sm font-bold">Loading Live STL Draw…</div>}>
+            <LiveDrawViewer pageSettings={pageSettings} />
+          </Suspense>
         ) : (
           <LandingPage
             pageSettings={pageSettings}

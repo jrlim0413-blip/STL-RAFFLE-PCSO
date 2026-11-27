@@ -20,6 +20,11 @@ import {
   toggleEntry,
   uploadProof
 } from './lib/raffleStore.js';
+import {
+  buildAnnouncementText,
+  getVoiceProviderInfo,
+  synthesizeAnnouncementAudio
+} from './lib/aiAnnouncer.js';
 import { getEntrySchedule } from './src/utils/entrySchedule.js';
 import { SUPERVISOR_NAMES } from './src/utils/supervisors.js';
 
@@ -744,14 +749,215 @@ app.post('/api/entries/:ticket/toggle', requireAdmin, asyncRoute(async (req, res
   res.json({ success: true, updated: entry });
 }));
 
+function sanitizePublicDrawResult(item) {
+  const winner = item?.winner || {};
+  return {
+    round: item.round,
+    prize: item.prize,
+    drawnAt: item.drawnAt,
+    winner: {
+      ticket: winner.ticket || '',
+      agent: winner.agent || '',
+      agentUsername: winner.agentUsername || '',
+      supervisorName: winner.supervisorName || ''
+    }
+  };
+}
+
 app.get('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ success: true, ...(await getDraw()) });
+  const [draw, settings] = await Promise.all([getDraw(), getSettings(DEFAULT_SETTINGS)]);
+  res.json({
+    success: true,
+    ...draw,
+    voiceInfo: getVoiceProviderInfo(),
+    liveState: settings.liveDrawState || null
+  });
 }));
 
 app.post('/api/draw', requireAdmin, asyncRoute(async (req, res) => {
   const result = await drawNext();
-  res.json({ success: true, ...result });
+  const body = req.body || {};
+  const currentSettings = await getSettings(DEFAULT_SETTINGS);
+  const prevLive = currentSettings.liveDrawState || {};
+  const publicResults = (result.results || []).map(sanitizePublicDrawResult);
+  const voiceGender = body.voiceGender === 'female'
+    ? 'female'
+    : body.voiceGender === 'male'
+      ? 'male'
+      : prevLive.voiceGender || 'male';
+
+  const updatedLive = {
+    ...prevLive,
+    phase: 'winner',
+    round: result.round,
+    prize: result.prize,
+    winnerTicket: result.winner?.ticket || '',
+    winnerName: result.winner?.agent || '',
+    nextRound: result.nextRound,
+    nextPrize: result.nextPrize,
+    drawnAt: result.drawnAt,
+    voiceGender,
+    publicResults,
+    updatedAt: new Date().toISOString(),
+    seq: (prevLive.seq || 0) + 1
+  };
+  await saveSettings({ ...currentSettings, liveDrawState: updatedLive });
+  res.json({ success: true, ...result, liveState: updatedLive });
+}));
+
+app.post('/api/draw/live-state', requireAdmin, asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  const currentSettings = await getSettings(DEFAULT_SETTINGS);
+  const prevLive = currentSettings.liveDrawState || {};
+  const allowedPhases = new Set(['idle', 'spinning']);
+  const nextPhase = body.phase !== undefined
+    ? (allowedPhases.has(body.phase) ? body.phase : null)
+    : (prevLive.phase || 'idle');
+  if (!nextPhase) {
+    return res.status(400).json({ success: false, error: 'Invalid live draw phase.' });
+  }
+
+  let publicResults = Array.isArray(prevLive.publicResults) ? prevLive.publicResults : null;
+  if (!publicResults) {
+    const draw = await getDraw();
+    publicResults = (draw.results || []).map(sanitizePublicDrawResult);
+  }
+
+  const wheelTickets = Array.isArray(body.wheelTickets)
+    ? body.wheelTickets.filter((t) => typeof t === 'string' && /^STL-\d{8}-\d{6}$/.test(t)).slice(0, 16)
+    : (prevLive.wheelTickets || []);
+  const eligibleCount = Number.isInteger(body.eligibleCount) && body.eligibleCount >= 0
+    ? body.eligibleCount
+    : (prevLive.eligibleCount || wheelTickets.length);
+  const voiceGender = body.voiceGender === 'female'
+    ? 'female'
+    : body.voiceGender === 'male'
+      ? 'male'
+      : prevLive.voiceGender || 'male';
+
+  const nextRoundValue = Number.isInteger(body.round)
+    ? body.round
+    : (prevLive.nextRound ?? (publicResults.length < 6 ? publicResults.length + 1 : null));
+  const nextPrizeValue = typeof body.prize === 'string'
+    ? body.prize
+    : (nextRoundValue ? (nextRoundValue === 6 ? '25 kg rice' : '5 kg rice') : null);
+
+  const updatedLive = {
+    ...prevLive,
+    phase: nextPhase,
+    round: nextRoundValue,
+    prize: nextPrizeValue,
+    nextRound: nextRoundValue,
+    nextPrize: nextPrizeValue,
+    voiceGender,
+    wheelTickets,
+    eligibleCount,
+    publicResults,
+    startedAt: nextPhase === 'spinning' ? new Date().toISOString() : prevLive.startedAt,
+    updatedAt: new Date().toISOString(),
+    seq: (prevLive.seq || 0) + 1
+  };
+  await saveSettings({ ...currentSettings, liveDrawState: updatedLive });
+  res.json({ success: true, liveState: updatedLive });
+}));
+
+app.get('/api/draw/live', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'public, max-age=0, s-maxage=1, stale-while-revalidate=1');
+  const settings = await getSettings(DEFAULT_SETTINGS);
+  const storedLive = settings.liveDrawState || {};
+  let results = Array.isArray(storedLive.publicResults) ? storedLive.publicResults : null;
+  let nextRound = storedLive.nextRound;
+  let nextPrize = storedLive.nextPrize;
+
+  if (!results) {
+    const draw = await getDraw();
+    results = (draw.results || []).map(sanitizePublicDrawResult);
+    nextRound = draw.nextRound;
+    nextPrize = draw.nextPrize;
+  }
+
+  res.json({
+    success: true,
+    campaignName: settings.campaignName || 'STL Community Rice Raffle',
+    liveState: {
+      phase: storedLive.phase || 'idle',
+      round: storedLive.round ?? nextRound ?? null,
+      prize: storedLive.prize ?? nextPrize ?? null,
+      winnerTicket: storedLive.winnerTicket || '',
+      winnerName: storedLive.winnerName || '',
+      nextRound: nextRound ?? (results.length < 6 ? results.length + 1 : null),
+      nextPrize: nextPrize ?? (results.length < 5 ? '5 kg rice' : results.length === 5 ? '25 kg rice' : null),
+      voiceGender: storedLive.voiceGender || 'male',
+      wheelTickets: Array.isArray(storedLive.wheelTickets) ? storedLive.wheelTickets : [],
+      eligibleCount: storedLive.eligibleCount || 0,
+      seq: storedLive.seq || 0,
+      startedAt: storedLive.startedAt || null,
+      updatedAt: storedLive.updatedAt || null
+    },
+    results,
+    voiceInfo: getVoiceProviderInfo()
+  });
+}));
+
+app.get('/api/draw/announce', asyncRoute(async (req, res) => {
+  const kind = String(req.query.kind || '').trim();
+  const gender = req.query.gender === 'female' ? 'female' : 'male';
+  const round = Number(req.query.round || 1);
+
+  let announcementText = '';
+  if (kind === 'test') {
+    if (!isAdminPasscodeValid(req.get('x-admin-passcode'))) {
+      return res.status(401).json({ success: false, error: 'Organizer passcode is required to test AI voice.' });
+    }
+    announcementText = buildAnnouncementText({ kind: 'test' });
+  } else if (kind === 'spin') {
+    if (!Number.isInteger(round) || round < 1 || round > 6) {
+      return res.status(400).json({ success: false, error: 'Invalid draw round.' });
+    }
+    announcementText = buildAnnouncementText({
+      kind: 'spin',
+      round,
+      prize: round === 6 ? '25 kg rice' : '5 kg rice'
+    });
+  } else if (kind === 'complete') {
+    announcementText = buildAnnouncementText({ kind: 'complete' });
+  } else if (kind === 'winner') {
+    const ticket = String(req.query.ticket || '').trim();
+    if (!Number.isInteger(round) || round < 1 || round > 6 || !ticket) {
+      return res.status(400).json({ success: false, error: 'Missing round or ticket.' });
+    }
+    const settings = await getSettings(DEFAULT_SETTINGS);
+    let results = Array.isArray(settings.liveDrawState?.publicResults)
+      ? settings.liveDrawState.publicResults
+      : null;
+    if (!results) {
+      results = (await getDraw()).results || [];
+    }
+    const matched = results.find((item) => item.round === round && item.winner?.ticket === ticket);
+    if (!matched) {
+      return res.status(404).json({ success: false, error: 'Winner announcement not found for this draw.' });
+    }
+    announcementText = buildAnnouncementText({
+      kind: 'winner',
+      round: matched.round,
+      prize: matched.prize,
+      winnerName: matched.winner?.agent,
+      ticket: matched.winner?.ticket
+    });
+  } else {
+    return res.status(400).json({ success: false, error: 'Invalid announcement kind.' });
+  }
+
+  const audioBuffer = await synthesizeAnnouncementAudio(announcementText, gender);
+  if (!audioBuffer) {
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, mode: 'browser', text: announcementText });
+  }
+
+  res.set('Content-Type', 'audio/mpeg');
+  res.set('Cache-Control', kind === 'test' ? 'no-store' : 'public, max-age=86400, s-maxage=86400');
+  res.send(audioBuffer);
 }));
 
 app.post('/api/draw/reset', requireAdmin, asyncRoute(async (req, res) => {
